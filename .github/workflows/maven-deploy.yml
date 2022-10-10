@@ -1,0 +1,44 @@
+on:
+  workflow_call:
+    secrets:
+      username:
+        required: true
+      password:
+        required: true
+    inputs:
+      environment:
+        type: string
+        description: environment running the deploy
+        required: true
+
+jobs:
+  maven-deploy:
+    name: Deploy to ${{ inputs.environment }}
+    environment: ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up JDK 11
+        uses: actions/setup-java@v3
+        with:
+          java-version: '11'
+          distribution: 'temurin'
+          cache: maven
+          server-id: ossrh-snapshots-distribution
+          server-username: MAVEN_USERNAME
+          server-password: MAVEN_PASSWORD
+      - name: Publish Libraries to OSS Sonatype Repository
+        run: mvn -B deploy
+        env:
+          MAVEN_USERNAME: ${{ secrets.username }}
+          MAVEN_PASSWORD: ${{ secrets.password }}
+      - run: |
+          mkdir lib
+          cp **/target/*.jar lib 2>/dev/null || :
+      - name: Publish JAR Artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: Library Artifacts
+          path: 'lib/*.jar'
+          if-no-files-found: ignore

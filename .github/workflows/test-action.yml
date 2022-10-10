@@ -1,0 +1,30 @@
+on:
+  workflow_call:
+    secrets:
+      test:
+        required: true
+    inputs:
+      environment:
+        type: string
+        description: environment running the deploy
+        required: true
+
+jobs:
+  maven-deploy:
+    name: test of  ${{ inputs.environment }}
+    environment: ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: test proper secret
+        run: | 
+          echo Environment is $ENVIRONMENT and $TEST_SECRET is masked
+          if [[ $TEST_SECRET == $ENVIRONMENT ]]; then
+          echo "Secret for the environment"
+          else
+          echo "Secret is not same as environment!"
+          fi
+        env:
+          TEST_SECRET: ${{ secrets.test }}
+          ENVIRONMENT: ${{ inputs.environment }}
+
