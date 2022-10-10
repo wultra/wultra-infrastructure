@@ -1,8 +1,8 @@
 on:
   workflow_call:
 jobs:
-  war-deploy:
-    name: Deploy WAR to GitHub
+  jar-deploy:
+    name: Deploy JAR to GitHub
     runs-on: ubuntu-latest
 
     steps:
@@ -13,14 +13,14 @@ jobs:
           java-version: '11'
           distribution: 'temurin'
           cache: maven
-      - name: Run Maven Package Step to create war
+      - name: Run Maven Package Step to create jar
         run: mvn -B -U  package
       - run: |
-          mkdir war
-          cp **/target/*.war war 2>/dev/null || :
-      - name: Publish WAR Artifacts
+          mkdir lib
+          cp **/target/*.jar lib 2>/dev/null || :
+      - name: Publish JAR Artifacts
         uses: actions/upload-artifact@v3
         with:
-          name: Application Artifacts
-          path: 'war/*.war'
+          name: Library Artifacts
+          path: 'lib/*.jar'
           if-no-files-found: ignore
