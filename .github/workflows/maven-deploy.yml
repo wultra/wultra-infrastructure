@@ -54,7 +54,7 @@ jobs:
           server-id: ${{ env.server_id }}
           server-username: MAVEN_USERNAME
           server-password: MAVEN_PASSWORD
-      - name: Publish Libraries to OSS Sonatype Repository
+      - name: Publish Libraries to ${{ env.server_id }}
         run: |
           if [ "$ENVIRONMENT" == "internal-publish" ]; then
             echo "running internal deploy"
@@ -67,7 +67,7 @@ jobs:
           MAVEN_USERNAME: ${{ secrets.username }}
           MAVEN_PASSWORD: ${{ secrets.password }}
           ENVIRONMENT: ${{ inputs.environment }}
-          SERVER_ID: ${{ env.server_id }}
+          SERVER_ID: ${{ env.server_id }} #SERVER_ID is not working in previous step for some reason TODO
       - run: |
           mkdir lib
           mkdir war
