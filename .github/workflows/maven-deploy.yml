@@ -8,8 +8,16 @@ on:
     inputs:
       environment:
         type: string
-        description: environment running the deploy
+        description: environment running the deploy maven-publish for using public maven repo and internal-publish for using internal one
         required: true
+      style:
+        type: choice
+        description: chose of deployment snapshot or release
+        default: snapshot
+        options:
+          - snapshot
+          - release
+
 
 jobs:
   maven-deploy:
@@ -17,28 +25,56 @@ jobs:
     environment: ${{ inputs.environment }}
     runs-on: ubuntu-latest
 
+
+
     steps:
       - uses: actions/checkout@v3
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
+          STYLE: ${{inputs.style}}
+        # Based on environment and style of deploy we pick a distribution server - better than setup 3-4 different environments per repository
+        run: |
+          if [ "$ENVIRONMENT" == "internal-publish"]; then
+            echo "server_id=jfrog-central" >> $GITHUB_ENV
+          elif [ "$STYLE" == release]; then
+            echo "server_id=ossrh-staging-distribution" >> $GITHUB_ENV
+          else
+            "server_id=ossrh-snapshots-distribution" >> $GITHUB_ENV
+          fi
       - name: Set up JDK 11
         uses: actions/setup-java@v3
         with:
           java-version: '11'
           distribution: 'temurin'
           cache: maven
-          server-id: ossrh-snapshots-distribution
+          server-id: ${{ env.server_id }}
           server-username: MAVEN_USERNAME
           server-password: MAVEN_PASSWORD
       - name: Publish Libraries to OSS Sonatype Repository
-        run: mvn -B deploy
+        run: |
+          if [ "$ENVIRONMENT" == 'internal-publish']; then
+            mvn -B deploy -DuseInternalRepo=true
+          else
+            mvn -B deploy
+          fi
         env:
           MAVEN_USERNAME: ${{ secrets.username }}
           MAVEN_PASSWORD: ${{ secrets.password }}
       - run: |
           mkdir lib
+          mdir war
           cp **/target/*.jar lib 2>/dev/null || :
+          cp **/target/*.war war 2>/dev/null || :
       - name: Publish JAR Artifacts
         uses: actions/upload-artifact@v3
         with:
           name: Library Artifacts
           path: 'lib/*.jar'
           if-no-files-found: ignore
+      - name: Publish WAR Artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: Application Artifacts
+          path: 'war/*.war'
+          if-no-files-found: ignore
+

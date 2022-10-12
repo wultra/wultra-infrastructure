@@ -1,5 +1,15 @@
 on:
   workflow_call:
+    inputs:
+      server-id:
+        type: string
+        description: server for publishing that should be used, if no specified we are using public maven repository, should be always jfrog-central
+        default: jfrog-central
+        required: false
+#      internal-repo:
+#        type: boolean
+#        description: should we call the profile with internal repository
+#        default: true
 
 jobs:
   run-tests:
@@ -12,9 +22,25 @@ jobs:
         with:
           java-version: '11'
           distribution: 'temurin'
+          server-id: SERVER_ID
+          server-username: INTERNAL_USERNAME
+          server-password: INTERNAL_PASSWORD
           cache: maven
       - name: Run Maven Test Step
-        run: mvn -B -U  test
+        # we are just building and running tests so for master and release branches use public repositories to resolve dependencies, for develop use internal repository.
+        # TBD if we should allow overload this by parameter
+        run: | 
+          if [ "$BRANCH" == 'develop']; then
+            mvn -B -U  test -DuseInternalRepo=true
+          else 
+            mvn -B -U  test
+          fi
+        env:
+          # those are not environmental secrect, but global secret - for readonly access to artifactory
+          INTERNAL_USERNAME: ${{ secrets.JFROG_USERNAME }}
+          INTERNAL_PASSWORD: ${{ secrets.JFROG_PASSWORD }}
+          BRANCH: ${{ github.ref_name }}
+          SERVER_ID: ${{inputs.server-id}}
       - name: Publish Test Report
         uses: mikepenz/action-junit-report@v3
         if: always()
