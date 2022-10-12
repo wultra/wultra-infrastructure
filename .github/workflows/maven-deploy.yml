@@ -39,7 +39,7 @@ jobs:
             echo "server_id=ossrh-staging-distribution" >> $GITHUB_ENV
           else
             echo "setting server to ossrh-snapshots-distribution"
-            "server_id=ossrh-snapshots-distribution" >> $GITHUB_ENV
+            echo "server_id=ossrh-snapshots-distribution" >> $GITHUB_ENV
           fi
       - name: Set up JDK 11
         uses: actions/setup-java@v3
