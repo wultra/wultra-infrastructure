@@ -30,9 +30,13 @@ jobs:
         # we are just building and running tests so for master and release branches use public repositories to resolve dependencies, for develop use internal repository.
         # TBD if we should allow overload this by parameter
         run: | 
+          echo "$BRANCH"
           if [ "$BRANCH" == "develop" ]; then
             echo "running on internal repo"
             mvn -B -U  test -DuseInternalRepo=true
+          elif [ "$BRANCH" == "test/ci" ]; then
+            echo "running on internal repo"
+            mvn -B -U  test -DuseInternalRepo=true          
           else 
             echo "running on public repo"
             mvn -B -U  test
