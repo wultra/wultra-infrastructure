@@ -31,7 +31,7 @@ jobs:
           STYLE: ${{inputs.style}}
         # Based on environment and style of deploy we pick a distribution server - better than setup 3-4 different environments per repository
         run: |
-          if [ "$ENVIRONMENT" == "internal-publish"]; then
+          if [ "$ENVIRONMENT" == "internal-publish" ]; then
             echo "setting server to internal"
             echo "server_id=jfrog-central" >> $GITHUB_ENV
           elif [ "$STYLE" == "release" ]; then
@@ -52,7 +52,7 @@ jobs:
           server-password: MAVEN_PASSWORD
       - name: Publish Libraries to OSS Sonatype Repository
         run: |
-          if [ "$ENVIRONMENT" == "internal-publish"]; then
+          if [ "$ENVIRONMENT" == "internal-publish" ]; then
             mvn -B deploy -DuseInternalRepo=true
           else
             mvn -B deploy
