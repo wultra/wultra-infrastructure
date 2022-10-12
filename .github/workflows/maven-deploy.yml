@@ -66,7 +66,7 @@ jobs:
           MAVEN_PASSWORD: ${{ secrets.password }}
       - run: |
           mkdir lib
-          mdir war
+          mkdir war
           cp **/target/*.jar lib 2>/dev/null || :
           cp **/target/*.war war 2>/dev/null || :
       - name: Publish JAR Artifacts
