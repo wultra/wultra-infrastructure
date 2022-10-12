@@ -30,7 +30,7 @@ jobs:
         # we are just building and running tests so for master and release branches use public repositories to resolve dependencies, for develop use internal repository.
         # TBD if we should allow overload this by parameter
         run: | 
-          if [ "$BRANCH" == 'develop']; then
+          if [ "$BRANCH" == "develop" ]; then
             mvn -B -U  test -DuseInternalRepo=true
           else 
             mvn -B -U  test

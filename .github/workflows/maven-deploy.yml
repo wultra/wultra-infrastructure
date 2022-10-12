@@ -36,7 +36,7 @@ jobs:
         run: |
           if [ "$ENVIRONMENT" == "internal-publish"]; then
             echo "server_id=jfrog-central" >> $GITHUB_ENV
-          elif [ "$STYLE" == release]; then
+          elif [ "$STYLE" == "release" ]; then
             echo "server_id=ossrh-staging-distribution" >> $GITHUB_ENV
           else
             "server_id=ossrh-snapshots-distribution" >> $GITHUB_ENV
@@ -52,7 +52,7 @@ jobs:
           server-password: MAVEN_PASSWORD
       - name: Publish Libraries to OSS Sonatype Repository
         run: |
-          if [ "$ENVIRONMENT" == 'internal-publish']; then
+          if [ "$ENVIRONMENT" == "internal-publish"]; then
             mvn -B deploy -DuseInternalRepo=true
           else
             mvn -B deploy
