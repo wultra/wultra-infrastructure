@@ -31,7 +31,7 @@ jobs:
           STYLE: ${{inputs.style}}
         # Based on environment and style of deploy we pick a distribution server - better than setup 3-4 different environments per repository
         run: |
-          echo "$ENVIRONMENT:$STYLE"
+          echo "$ENVIRONMENT:$STYLE x ${{ inputs.environment }} x ${{inputs.style}}"
           if [ "$ENVIRONMENT" == "maven-publish" ]; then
             if [ "$STYLE" == "release" ]; then
               echo "setting server to ossrh-staging-distribution"
