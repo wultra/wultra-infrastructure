@@ -51,7 +51,7 @@ jobs:
           java-version: '11'
           distribution: 'temurin'
           cache: maven
-          server-id: ${{ env.server_id }}
+          server-id: SERVER_ID
           server-username: MAVEN_USERNAME
           server-password: MAVEN_PASSWORD
       - name: Publish Libraries to OSS Sonatype Repository
@@ -66,6 +66,8 @@ jobs:
         env:
           MAVEN_USERNAME: ${{ secrets.username }}
           MAVEN_PASSWORD: ${{ secrets.password }}
+          ENVIRONMENT: ${{ inputs.environment }}
+          SERVER_ID: ${{ env.server_id }}
       - run: |
           mkdir lib
           mkdir war
