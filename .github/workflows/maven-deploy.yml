@@ -11,13 +11,9 @@ on:
         description: environment running the deploy maven-publish for using public maven repo and internal-publish for using internal one
         required: true
       style:
-        type: choice
-        description: chose of deployment snapshot or release
+        type: string
+        description: chose of deployment snapshot or release snapshot or release
         default: snapshot
-        options:
-          - snapshot
-          - release
-
 
 jobs:
   maven-deploy:
