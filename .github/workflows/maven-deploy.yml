@@ -51,7 +51,7 @@ jobs:
           java-version: '11'
           distribution: 'temurin'
           cache: maven
-          server-id: SERVER_ID
+          server-id: ${{ env.server_id }}
           server-username: MAVEN_USERNAME
           server-password: MAVEN_PASSWORD
       - name: Publish Libraries to OSS Sonatype Repository
@@ -59,7 +59,7 @@ jobs:
           if [ "$ENVIRONMENT" == "internal-publish" ]; then
             echo "running internal deploy"
             mvn -B deploy -DuseInternalRepo=true
-          else
+          elif [ "$ENVIRONMENT" == "maven-publish" ]; then
             echo "running oss deploy"
             mvn -B deploy
           fi
