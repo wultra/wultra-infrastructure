@@ -10,7 +10,7 @@ on:
         type: string
         description: environment running the deploy maven-publish for using public maven repo and internal-publish for using internal one
         required: true
-      style:
+      release_type:
         type: string
         description: chose of deployment snapshot or release snapshot or release
         default: snapshot
@@ -28,15 +28,15 @@ jobs:
       - name: Set environment
         env:
           ENVIRONMENT: ${{ inputs.environment }}
-          STYLE: ${{ inputs.style }}
-        # Based on environment and style of deploy we pick a distribution server - better than setup 3-4 different environments per repository
+          RElEASE_TYPE: ${{ inputs.release_type }}
+        # Based on environment and release type of deploy we pick a distribution server - better than setup 3-4 different environments per repository
         run: |
-          echo "$ENVIRONMENT:$STYLE"
+          echo "$ENVIRONMENT:RELEASE_TYPE"
           if [ "$ENVIRONMENT" == "maven-publish" ]; then
-            if [ "$STYLE" == "release" ]; then
+            if [ "RELEASE_TYPE" == "release" ]; then
               echo "setting server to ossrh-staging-distribution"
               echo "server_id=ossrh-staging-distribution" >> $GITHUB_ENV
-            elif [ "$STYLE" == "snapshot" ]; then
+            elif [ "RELEASE_TYPE" == "snapshot" ]; then
               echo "setting server to ossrh-snapshots-distribution"
               echo "server_id=ossrh-snapshots-distribution" >> $GITHUB_ENV
             fi
