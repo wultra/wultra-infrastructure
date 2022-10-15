@@ -14,15 +14,16 @@ on:
         type: string
         description: chose of deployment snapshot or release snapshot or release
         default: snapshot
+    env:
+      BLACKLIST_REPO: ["wultra/enrollment-server-rb", "wultra/powerauth-webflow-equa", "wultra/powerauth-webflow-customization-equa", "wultra/enrollment-server-sazka" ]
 
 jobs:
   maven-deploy:
     name: Deploy to ${{ inputs.environment }}
     environment: ${{ inputs.environment }}
     runs-on: ubuntu-latest
-
-
-
+    #run publish to public repo only if repository is not blacklisted
+    if: ${{  inputs.environment != 'maven-publish' || contains(env.BLACKLIST_REPO, github.repository) }}
     steps:
       - uses: actions/checkout@v3
       - name: Set environment
@@ -44,7 +45,6 @@ jobs:
             echo "setting server to internal"
             echo "server_id=jfrog-central" >> $GITHUB_ENV
           fi
-
       - name: Set up JDK 11
         uses: actions/setup-java@v3
         with:
