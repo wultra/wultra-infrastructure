@@ -12,7 +12,7 @@ on:
         required: true
       release_type:
         type: string
-        description: choice of release type -- snapshot / release
+        description: choice of release type (snapshot / release)
         default: snapshot
 
 jobs:
