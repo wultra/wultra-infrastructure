@@ -28,7 +28,7 @@ jobs:
       - name: Set environment
         env:
           ENVIRONMENT: ${{ inputs.environment }}
-          RElEASE_TYPE: ${{ inputs.release_type }}
+          RELEASE_TYPE: ${{ inputs.release_type }}
         # Based on environment and release type of deploy we pick a distribution server - better than setup 3-4 different environments per repository
         run: |
           echo "$ENVIRONMENT:$RELEASE_TYPE"
