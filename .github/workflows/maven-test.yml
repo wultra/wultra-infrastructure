@@ -6,6 +6,10 @@ on:
         description: server for publishing that should be used, if no specified we are using public maven repository, should be always jfrog-central
         default: jfrog-central
         required: false
+      directory_path:
+        type: string
+        description: directory with pom.xml to be executed
+        default: .
 #      internal-repo:
 #        type: boolean
 #        description: should we call the profile with internal repository
@@ -31,6 +35,7 @@ jobs:
         # TBD if we should allow overload this by parameter
         run: | 
           echo "$BRANCH"
+          cd ${{ inputs.directory_path }}
           if [ "$BRANCH" == "develop" ]; then
             echo "running on internal repo"
             mvn -B -U  test -DuseInternalRepo=true
