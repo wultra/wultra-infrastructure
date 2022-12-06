@@ -3,7 +3,7 @@ on:
     inputs:
       server-id:
         type: string
-        description: server for publishing that should be used, if no specified we are using public maven repository, should be always jfrog-central
+        description: server for reading the artifact, should be always jfrog-central, but for release artifact we should use only maven
         default: jfrog-central
         required: false
       directory_path:
@@ -26,7 +26,7 @@ jobs:
         with:
           java-version: '11'
           distribution: 'temurin'
-          server-id: SERVER_ID
+          server-id: ${{inputs.server-id}}
           server-username: INTERNAL_USERNAME
           server-password: INTERNAL_PASSWORD
           cache: maven
