@@ -36,18 +36,16 @@ jobs:
         run: | 
           echo "$BRANCH"
           cd ${{ inputs.directory_path }}
-          if [ "$BRANCH" == "develop" ]; then
+          # release branches always need published artifact
+          if [ "$BRANCH" == "release"* ]; then
+            echo "running on public repo"
+            mvn -B -U  test             
+          else 
             echo "running on internal repo"
             mvn -B -U  test -DuseInternalRepo=true
-          elif [ "$BRANCH" == "test/ci" ]; then
-            echo "running on internal repo"
-            mvn -B -U  test -DuseInternalRepo=true          
-          else 
-            echo "running on public repo"
-            mvn -B -U  test
           fi
         env:
-          # those are not environmental secrect, but global secret - for readonly access to artifactory
+          # those are not environmental secret, but global secret - for readonly access to artifactory
           INTERNAL_USERNAME: ${{ secrets.JFROG_USERNAME }}
           INTERNAL_PASSWORD: ${{ secrets.JFROG_PASSWORD }}
           BRANCH: ${{ github.ref_name }}
