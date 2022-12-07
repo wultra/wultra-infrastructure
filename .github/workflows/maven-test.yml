@@ -3,17 +3,14 @@ on:
     inputs:
       server-id:
         type: string
-        description: server for reading the artifact, should be always jfrog-central, but for release artifact we should use only maven
+        description: server for reading the artifacts, should be always jfrog-central
         default: jfrog-central
         required: false
       directory_path:
         type: string
         description: directory with pom.xml to be executed
         default: .
-#      internal-repo:
-#        type: boolean
-#        description: should we call the profile with internal repository
-#        default: true
+
 
 jobs:
   run-tests:
@@ -26,14 +23,14 @@ jobs:
         with:
           java-version: '11'
           distribution: 'temurin'
-          server-id: ${{inputs.server-id}}
-          server-username: ${{ secrets.JFROG_USERNAME }}
-          server-password: ${{ secrets.JFROG_PASSWORD }}
+          server-id: ${{inputs.server-id}} #server id has to be passed this way it will not work via env in the test step
+          server-username: INTERNAL_USERNAME
+          server-password: INTERNAL_PASSWORD
           cache: maven
       - name: Run Maven Test Step
         # we are just building and running tests so for master and release branches use public repositories to resolve dependencies, for develop use internal repository.
         # TBD if we should allow overload this by parameter
-        run: | 
+        run: |
           echo "$BRANCH"
           cd ${{ inputs.directory_path }}
           # release branches always need published artifact
@@ -45,11 +42,10 @@ jobs:
             mvn -B -U  test -DuseInternalRepo=true
           fi
         env:
-          # those are not environmental secret, but global secret - for readonly access to artifactory
+          # those are not environmental secret, but global secret - for readonly access to artifactory, credentials has to be passed this way
           INTERNAL_USERNAME: ${{ secrets.JFROG_USERNAME }}
           INTERNAL_PASSWORD: ${{ secrets.JFROG_PASSWORD }}
           BRANCH: ${{ github.ref_name }}
-          SERVER_ID: ${{inputs.server-id}}
       - name: Publish Test Report
         uses: mikepenz/action-junit-report@v3
         if: always()

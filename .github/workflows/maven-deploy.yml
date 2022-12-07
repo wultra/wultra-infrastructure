@@ -72,7 +72,6 @@ jobs:
           MAVEN_USERNAME: ${{ secrets.username }}
           MAVEN_PASSWORD: ${{ secrets.password }}
           ENVIRONMENT: ${{ inputs.environment }}
-          SERVER_ID: ${{ env.server_id }} #SERVER_ID is not working in previous step for some reason TODO
       - run: |
           mkdir lib
           mkdir war
