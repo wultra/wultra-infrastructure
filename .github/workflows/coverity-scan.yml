@@ -43,4 +43,4 @@ jobs:
             --form file=@${{ inputs.project-name }}.tgz  \
             --form version="${{ inputs.version }}" \
             --form description="${{ inputs.description }}" \
-            https://scan.coverity.com/builds?project=${{ inputs.project-name }}
+            https://scan.coverity.com/builds?project=wultra%2F${{ inputs.project-name }}
