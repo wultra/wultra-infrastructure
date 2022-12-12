@@ -1,10 +1,6 @@
 
 on:
   workflow_call:
-    email:
-      type: string
-      description: email of uploader
-      required: true
     version:
       type: string
       description: project/build version - use commit sha or maven version of artifact
@@ -41,9 +37,9 @@ jobs:
           path: result
       - name: Upload to Coverity Scan Dashboard
         run: |
-          curl --form token=${{secrets.COVERITY_SCAN_TOKEN}} \
-            --form email=${{inputs.email}}  \
+          curl --form token=${{ secrets.COVERITY_SCAN_TOKEN }} \
+            --form email=${{ secrets.COVERITY_USER }}  \
             --form file=@{{ inputs.project-name }}.tgz  \
             --form version="${{ inputs.version }}" \
             --form description="${{ inputs.description }}" \
-            https://scan.coverity.com/builds project=wultra%2F${{ inputs.project-name }}
+            https://scan.coverity.com/builds?project={{ inputs.project-name }}
