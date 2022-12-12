@@ -1,18 +1,19 @@
 
 on:
   workflow_call:
-    version:
-      type: string
-      description: project/build version - use commit sha or maven version of artifact
-      required: true
-    description:
-      type: string
-      description: desription/tag of the build - use RC for Release Candidate
-      required: true
-    project-name:
-      type: string
-      description: project name in Coverity Scan
-      required: true
+    inputs:
+      version:
+        type: string
+        description: project/build version - use commit sha or maven version of artifact
+        required: true
+      description:
+        type: string
+        description: desription/tag of the build - use RC for Release Candidate
+        required: true
+      project-name:
+        type: string
+        description: project name in Coverity Scan
+        required: true
 
 
 jobs:
