@@ -1,0 +1,49 @@
+
+on:
+  workflow_call:
+    email:
+      type: string
+      description: email of uploader
+      required: true
+    version:
+      type: string
+      description: project/build version - use commit sha or maven version of artifact
+      required: true
+    description:
+      type: string
+      description: desription/tag of the build - use RC for Release Candidate
+      required: true
+    project-name:
+      type: string
+      description: project name in Coverity Scan
+      required: true
+
+
+jobs:
+  build:
+    name: Coverity Scan
+    runs-on: ubuntu-latest
+    container: ghcr.io/wultra/coverity:latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up JDK 11
+        uses: actions/setup-java@v3
+        with:
+          java-version: '11'
+          distribution: 'temurin'
+          cache: maven
+      - run: cov-build --dir cov-int mvn -DskipTests=true compile
+      - run: tar czvf {{ inputs.project-name }}.tgz cov-int
+      - run: mkdir result && cp {{ inputs.project-name }}.tgz result
+      - uses: actions/upload-artifact@v3
+        with:
+          name: Analysis
+          path: result
+      - name: Upload to Coverity Scan Dashboard
+        run: |
+          curl --form token=${{secrets.COVERITY_SCAN_TOKEN}} \
+            --form email=${{inputs.email}}  \
+            --form file=@{{ inputs.project-name }}.tgz  \
+            --form version="${{ inputs.version }}" \
+            --form description="${{ inputs.description }}" \
+            https://scan.coverity.com/builds project=wultra%2F${{ inputs.project-name }}
