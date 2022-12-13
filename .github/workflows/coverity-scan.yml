@@ -14,6 +14,10 @@ on:
         type: string
         description: project name in Coverity Scan
         required: true
+      directory_path:
+        type: string
+        description: directory with pom.xml to be executed
+        default: .
 
 
 jobs:
@@ -29,6 +33,7 @@ jobs:
           java-version: '11'
           distribution: 'temurin'
           cache: maven
+      - run: cd ${{ inputs.directory_path }}
       - run: cov-build --dir cov-int mvn -DskipTests=true compile
       - run: tar czvf ${{ inputs.project-name }}.tgz cov-int
       - run: mkdir result && cp ${{ inputs.project-name }}.tgz result
