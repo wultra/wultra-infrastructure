@@ -40,14 +40,14 @@ jobs:
           tar czvf ${{ inputs.project-name }}.tgz cov-int
           mkdir result && cp ${{ inputs.project-name }}.tgz result
       - name: Storing Generated Artifacts
-      - uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v3
         with:
           name: Analysis
           path: result
           retention-days: 35
           if-no-files-found: ignore
       - name: Upload to Coverity Scan Dashboard
-      - run: |
+        run: |
           cd ${{ inputs.directory_path }}
           curl --form token=${{ secrets.COVERITY_SCAN_TOKEN }} \
             --form email=${{ secrets.COVERITY_USER }}  \
