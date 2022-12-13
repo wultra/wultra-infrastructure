@@ -38,6 +38,7 @@ jobs:
           cov-build --dir cov-int mvn -DskipTests=true compile
           tar czvf ${{ inputs.project-name }}.tgz cov-int
           mkdir result && cp ${{ inputs.project-name }}.tgz result
+      - name: storing generated artifacts
       - uses: actions/upload-artifact@v3
         with:
           name: Analysis
