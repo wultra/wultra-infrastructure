@@ -33,6 +33,7 @@ jobs:
           java-version: '11'
           distribution: 'temurin'
           cache: maven
+      - name: Prepare Analysis
         run: |
           cd ${{ inputs.directory_path }}
           cov-build --dir cov-int mvn -DskipTests=true compile
