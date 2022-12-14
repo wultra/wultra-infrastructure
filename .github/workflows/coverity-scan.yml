@@ -14,6 +14,10 @@ on:
         type: string
         description: project name in Coverity Scan
         required: true
+      directory_path:
+        type: string
+        description: directory with pom.xml to be executed
+        default: .
 
 
 jobs:
@@ -29,15 +33,22 @@ jobs:
           java-version: '11'
           distribution: 'temurin'
           cache: maven
-      - run: cov-build --dir cov-int mvn -DskipTests=true compile
-      - run: tar czvf ${{ inputs.project-name }}.tgz cov-int
-      - run: mkdir result && cp ${{ inputs.project-name }}.tgz result
-      - uses: actions/upload-artifact@v3
+      - name: Prepare Analysis
+        run: |
+          cd ${{ inputs.directory_path }}
+          cov-build --dir cov-int mvn -DskipTests=true compile
+          tar czvf ${{ inputs.project-name }}.tgz cov-int
+          mkdir result && cp ${{ inputs.project-name }}.tgz result
+      - name: Storing Generated Artifacts
+        uses: actions/upload-artifact@v3
         with:
           name: Analysis
           path: result
+          retention-days: 35
+          if-no-files-found: ignore
       - name: Upload to Coverity Scan Dashboard
         run: |
+          cd ${{ inputs.directory_path }}
           curl --form token=${{ secrets.COVERITY_SCAN_TOKEN }} \
             --form email=${{ secrets.COVERITY_USER }}  \
             --form file=@${{ inputs.project-name }}.tgz  \
