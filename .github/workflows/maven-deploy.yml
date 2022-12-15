@@ -70,7 +70,7 @@ jobs:
             cat <(echo -e "${{ secrets.gpg_key }}") | gpg --batch --import          
             mvn \
               -B \
-              --no-transfer-progress \          
+              --no-transfer-progress \
               -DuseInternalRepo=true \
               -Dgpg.passphrase=${{ secrets.gpg_passphrase }} \
               deploy
