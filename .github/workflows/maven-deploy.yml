@@ -5,6 +5,10 @@ on:
         required: true
       password:
         required: true
+      gpg_passphrase:
+        required: false
+      gpg_key:
+        required: false
     inputs:
       environment:
         type: string
@@ -63,10 +67,16 @@ jobs:
           cd ${{ inputs.directory_path }}
           if [ "$ENVIRONMENT" == "internal-publish" ]; then
             echo "running internal deploy"
-            mvn -B deploy -DuseInternalRepo=true
+            mvn -B -DuseInternalRepo=true --no-transfer-progress deploy 
           elif [ "$ENVIRONMENT" == "maven-publish" ]; then
             echo "running oss deploy"
-            mvn -B deploy
+            if [ "$RELEASE_TYPE" == "release" ]; then
+              echo -e "${{ secrets.gpg_key }}" > keyfile.asc
+              echo -e "${{ secrets.gpg_passphrase }}" > passphrase.txt
+              mvn -B --no-transfer-progress -DperformRelease=true -Dpgp.secretkey=keyfile:keyfile.asc -Dpgp.passphrase=file:passphrase.txt deploy          
+            elif [ "$RELEASE_TYPE" == "snapshot" ]; then
+              mvn -B --no-transfer-progress deploy
+            fi          
           fi
         env:
           MAVEN_USERNAME: ${{ secrets.username }}
