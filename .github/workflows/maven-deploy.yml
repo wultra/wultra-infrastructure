@@ -68,10 +68,12 @@ jobs:
           if [ "$ENVIRONMENT" == "internal-publish" ]; then
             echo "running internal deploy"
             cat <(echo -e "${{ secrets.gpg_key }}") | gpg --batch --import          
-            mvn -B \
+            mvn \
+              -B \
               --no-transfer-progress \          
-              deploy -DuseInternalRepo=true \
-              -Dgpg.passphrase=${{ secrets.gpg_passphrase }}
+              -DuseInternalRepo=true \
+              -Dgpg.passphrase=${{ secrets.gpg_passphrase }} \
+              deploy
           elif [ "$ENVIRONMENT" == "maven-publish" ]; then
             echo "running oss deploy"
             if [ "$RELEASE_TYPE" == "release" ]; then
