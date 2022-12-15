@@ -68,7 +68,8 @@ jobs:
           if [ "$ENVIRONMENT" == "internal-publish" ]; then
             echo "running internal deploy"
             echo -e "${{ secrets.gpg_key }}" > keyfile.asc
-            mvn deploy -B --no-transfer-progress -DuseInternalRepo=true -DperformRelease=true -Dpgp.secretkey=keyfile:keyfile.asc -Dpgp.passphrase=literal:${{ secrets.gpg_passphrase }}
+            echo -e "${{ secrets.gpg_passphrase }}" > passphrase.txt
+            mvn deploy -B --no-transfer-progress -DuseInternalRepo=true -DperformRelease=true -Dpgp.secretkey=keyfile:keyfile.asc -Dpgp.passphrase=file:passphrase.txt
           elif [ "$ENVIRONMENT" == "maven-publish" ]; then
             echo "running oss deploy"
             if [ "$RELEASE_TYPE" == "release" ]; then
