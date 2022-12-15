@@ -5,6 +5,10 @@ on:
         required: true
       password:
         required: true
+      gpg_passphrase:
+        required: false
+      gpg_key:
+        required: false
     inputs:
       environment:
         type: string
@@ -63,15 +67,19 @@ jobs:
           cd ${{ inputs.directory_path }}
           if [ "$ENVIRONMENT" == "internal-publish" ]; then
             echo "running internal deploy"
-            cat <(echo -e "${{ secrets.OSSRH_GPG_SECRET_KEY }}") | gpg --batch --import          
-            mvn -B deploy -DuseInternalRepo=true -Dgpg.passphrase=${{ secrets.OSSRH_GPG_SECRET_KEY_PASSWORD }}
+            cat <(echo -e "${{ secrets.gpg_key }}") | gpg --batch --import          
+            mvn -B \
+              --no-transfer-progress \          
+              deploy -DuseInternalRepo=true \
+              -Dgpg.passphrase=${{ secrets.gpg_passphrase }}
           elif [ "$ENVIRONMENT" == "maven-publish" ]; then
             echo "running oss deploy"
             if [ "$RELEASE_TYPE" == "release" ]; then
-              cat <(echo -e "${{ secrets.OSSRH_GPG_SECRET_KEY }}") | gpg --batch --import
+              cat <(echo -e "${{ secrets.gpg_key }}") | gpg --batch --import
               mvn -B \
                 --no-transfer-progress \
-                -Dgpg.passphrase=${{ secrets.OSSRH_GPG_SECRET_KEY_PASSWORD }} \deploy
+                -Dgpg.passphrase=${{ secrets.gpg_passphrase }} \
+                deploy
             elif [ "$RELEASE_TYPE" == "snapshot" ]; then
               mvn -B deploy
             fi          
