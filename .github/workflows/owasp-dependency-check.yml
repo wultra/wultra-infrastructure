@@ -45,7 +45,7 @@ jobs:
         uses: mikepenz/action-junit-report@v3
         with:
           detailed_summary: true
-          include_passed: true
+          include_passed: false
           report_paths: '**/reports/*.xml'
       - name: Upload Report Results
         uses: actions/upload-artifact@v3
