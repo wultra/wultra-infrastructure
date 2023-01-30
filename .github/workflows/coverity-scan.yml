@@ -2,6 +2,10 @@
 on:
   workflow_call:
     inputs:
+      java_version:
+        type: string
+        description: set version of java used to run the maven
+        default: '17'
       version:
         type: string
         description: project/build version - use commit sha or maven version of artifact
@@ -27,10 +31,10 @@ jobs:
     container: ghcr.io/wultra/coverity:latest
     steps:
       - uses: actions/checkout@v3
-      - name: Set up JDK 11
+      - name: Set up JDK ${{ inputs.java_version }}
         uses: actions/setup-java@v3
         with:
-          java-version: '11'
+          java-version: ${{ inputs.java_version }}
           distribution: 'temurin'
           cache: maven
       - name: Prepare Analysis
