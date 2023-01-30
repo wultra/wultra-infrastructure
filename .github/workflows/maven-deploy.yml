@@ -10,6 +10,10 @@ on:
       gpg_key:
         required: false
     inputs:
+      java_version:
+        type: string
+        description: set version of java used to run the maven
+        default: '17'
       environment:
         type: string
         description: environment running the deploy maven-publish for using public maven repo and internal-publish for using internal one
@@ -49,10 +53,10 @@ jobs:
             echo "setting server to internal"
             echo "server_id=jfrog-central" >> $GITHUB_ENV
           fi
-      - name: Set up JDK 11
+      - name: Set up JDK ${{ inputs.java_version }}
         uses: actions/setup-java@v3
         with:
-          java-version: '11'
+          java-version: ${{ inputs.java_version }}
           distribution: 'temurin'
           cache: maven
           server-id: ${{ env.server_id }}
