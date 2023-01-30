@@ -53,10 +53,10 @@ jobs:
             echo "setting server to internal"
             echo "server_id=jfrog-central" >> $GITHUB_ENV
           fi
-      - name: Set up JDK ${{ env.java_version }}
+      - name: Set up JDK ${{ inputs.java_version }}
         uses: actions/setup-java@v3
         with:
-          java-version: ${{ env.java_version }}
+          java-version: ${{ inputs.java_version }}
           distribution: 'temurin'
           cache: maven
           server-id: ${{ env.server_id }}

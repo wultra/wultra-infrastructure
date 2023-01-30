@@ -22,10 +22,10 @@ jobs:
 
     steps:
       - uses: actions/checkout@v3
-      - name: Set up JDK ${{ env.java_version }}
+      - name: Set up JDK ${{ inputs.java_version }}
         uses: actions/setup-java@v3
         with:
-          java-version: ${{ env.java_version }}
+          java-version: ${{ inputs.java_version }}
           distribution: 'temurin'
           server-id: ${{inputs.server-id}} #server id has to be passed this way it will not work via env in the test step
           server-username: INTERNAL_USERNAME
