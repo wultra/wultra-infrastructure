@@ -18,7 +18,10 @@ on:
         type: string
         description: directory with pom.xml to be executed
         default: .
-
+      java_version:
+        type: string
+        description: set version of java used to run the maven
+        default: '17'
 
 jobs:
   build:
@@ -27,10 +30,10 @@ jobs:
     container: ghcr.io/wultra/coverity:latest
     steps:
       - uses: actions/checkout@v3
-      - name: Set up JDK 11
+      - name: Set up JDK ${{ inputs.java_version }}
         uses: actions/setup-java@v3
         with:
-          java-version: '11'
+          java-version: ${{ inputs.java_version }}
           distribution: 'temurin'
           cache: maven
       - name: Prepare Analysis
