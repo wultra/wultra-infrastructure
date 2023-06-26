@@ -72,8 +72,8 @@ jobs:
           elif [ "$ENVIRONMENT" == "maven-publish" ]; then
             echo "running oss deploy"
             if [ "$RELEASE_TYPE" == "release" ]; then
-              echo -e "${{ secrets.gpg_key }}" > keyfile.asc
-              echo -e "${{ secrets.gpg_passphrase }}" > passphrase.txt
+              echo -e '${{ secrets.gpg_key }}' > keyfile.asc
+              echo -e '${{ secrets.gpg_passphrase }}' > passphrase.txt
               mvn -B --no-transfer-progress -DperformRelease=true -Dpgp.secretkey=keyfile:keyfile.asc -Dpgp.passphrase=file:passphrase.txt deploy          
             elif [ "$RELEASE_TYPE" == "snapshot" ]; then
               mvn -B --no-transfer-progress deploy
