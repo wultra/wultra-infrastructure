@@ -2,6 +2,10 @@
 on:
   workflow_call:
     inputs:
+      java_version:
+        type: string
+        description: set version of java used to run the maven
+        default: '17'
       version:
         type: string
         description: project/build version - use commit sha or maven version of artifact
@@ -39,7 +43,7 @@ jobs:
       - name: Prepare Analysis
         run: |
           cd ${{ inputs.directory_path }}
-          cov-build --dir cov-int mvn -DskipTests=true compile
+          cov-build --dir cov-int mvn -DskipTests=true -DuseInternalRepo=true compile
           tar czvf ${{ inputs.project-name }}.tgz cov-int
           mkdir result && cp ${{ inputs.project-name }}.tgz result
       - name: Storing Generated Artifacts
