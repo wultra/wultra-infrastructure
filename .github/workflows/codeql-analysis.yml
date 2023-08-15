@@ -52,7 +52,7 @@ jobs:
       - name: Autobuild
         uses: github/codeql-action/autobuild@v2
         env:
-          MAVEN_ARGS: '-DuseInternalRepo=true'
+          JAVA_TOOL_OPTIONS: '-DuseInternalRepo=true'
           # those are not environmental secret, but global secret - for readonly access to artifactory, credentials has to be passed this way
           INTERNAL_USERNAME: ${{ secrets.JFROG_USERNAME }}
           INTERNAL_PASSWORD: ${{ secrets.JFROG_PASSWORD }}
