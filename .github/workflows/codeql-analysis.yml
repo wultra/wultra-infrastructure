@@ -10,6 +10,11 @@ on:
         required: false
         type: string
         default: '17'
+      server-id:
+        type: string
+        description: server for reading the artifacts, should be always jfrog-central
+        default: jfrog-central
+        required: false
 
 jobs:
   analyze:
@@ -34,6 +39,9 @@ jobs:
         with:
           java-version: ${{ inputs.java-version }}
           distribution: 'temurin'
+          server-id: ${{inputs.server-id}} #server id has to be passed this way it will not work via env in the test step
+          server-username: INTERNAL_USERNAME
+          server-password: INTERNAL_PASSWORD
           cache: maven
 
       - name: Initialize CodeQL
@@ -43,6 +51,10 @@ jobs:
 
       - name: Autobuild
         uses: github/codeql-action/autobuild@v2
+        env:
+          JAVA_TOOL_OPTIONS: '-DuseInternalRepo=true'
+          INTERNAL_USERNAME: ${{ secrets.JFROG_USERNAME }}
+          INTERNAL_PASSWORD: ${{ secrets.JFROG_PASSWORD }}
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v2
