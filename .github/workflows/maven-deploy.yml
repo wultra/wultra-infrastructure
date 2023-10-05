@@ -85,8 +85,8 @@ jobs:
       - run: |
           mkdir lib
           mkdir war
-          cp **/target/*.jar lib 2>/dev/null || :
-          cp **/target/*.war war 2>/dev/null || :
+          cp ${{ inputs.directory_path }}/target/*.jar lib 2>/dev/null || :
+          cp ${{ inputs.directory_path }}/target/*.war war 2>/dev/null || :
       - name: Publish JAR Artifacts
         uses: actions/upload-artifact@v3
         with:
