@@ -4,14 +4,14 @@ on:
       java_version:
         type: string
         description: set version of java used to run the maven
-        default: '17'
+        default: '21'
       version:
         type: string
         description: project/build version - use commit sha or maven version of artifact
         required: true
       description:
         type: string
-        description: desription/tag of the build - use RC for Release Candidate
+        description: description/tag of the build - use RC for Release Candidate
         required: true
       project-name:
         type: string

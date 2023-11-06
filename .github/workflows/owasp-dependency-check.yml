@@ -4,7 +4,7 @@ on:
       java_version:
         type: string
         description: set version of java used to run the maven
-        default: '17'
+        default: '21'
       directory_path:
         type: string
         description: directory with pom.xml to be executed
