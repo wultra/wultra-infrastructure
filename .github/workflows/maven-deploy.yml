@@ -82,11 +82,14 @@ jobs:
         env:
           MAVEN_USERNAME: ${{ secrets.username }}
           MAVEN_PASSWORD: ${{ secrets.password }}
-      - run: |
-          mkdir lib
-          mkdir war
-          cp ${{ inputs.directory_path }}/target/*.jar lib 2>/dev/null || :
-          cp ${{ inputs.directory_path }}/target/*.war war 2>/dev/null || :
+      - name: Prepare artifacts for publish
+        run: |
+          mkdir lib war
+          target_dirs=($(find ${{ inputs.directory_path }} -type d -name "target" -maxdepth 4))
+          for target_dir in "${target_dirs[@]}"; do
+            find "$target_dir" -maxdepth 1 -type f -name "*.jar" -exec cp -v {} lib \;
+            find "$target_dir" -maxdepth 1 -type f -name "*.war" -exec cp -v {} war \;
+          done
       - name: Publish JAR Artifacts
         uses: actions/upload-artifact@v3
         with:
