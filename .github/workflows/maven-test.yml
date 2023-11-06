@@ -40,10 +40,10 @@ jobs:
           # release branches always need published artifact
           if [ "$BRANCH" == "release"* ]; then
             echo "running on public repo"
-            mvn -B -U  test             
+            mvn -B -U  test
           else 
             echo "running on internal repo"
-            mvn -B -U  test -DuseInternalRepo=true
+            mvn -B -U test -DuseInternalRepo=true
           fi
         env:
           # those are not environmental secret, but global secret - for readonly access to artifactory, credentials has to be passed this way
