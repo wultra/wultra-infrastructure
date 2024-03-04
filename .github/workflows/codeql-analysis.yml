@@ -9,7 +9,7 @@ on:
         description: 'The version of Java to use.'
         required: false
         type: string
-        default: '17'
+        default: '21'
       server-id:
         type: string
         description: server for reading the artifacts, should be always jfrog-central
