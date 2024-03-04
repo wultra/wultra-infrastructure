@@ -45,18 +45,18 @@ jobs:
           cache: maven
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v2
+        uses: github/codeql-action/init@v3
         with:
           languages: ${{ matrix.language }}
 
       - name: Autobuild
-        uses: github/codeql-action/autobuild@v2
+        uses: github/codeql-action/autobuild@v3
         env:
           JAVA_TOOL_OPTIONS: '-DuseInternalRepo=true'
           INTERNAL_USERNAME: ${{ secrets.JFROG_USERNAME }}
           INTERNAL_PASSWORD: ${{ secrets.JFROG_PASSWORD }}
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v2
+        uses: github/codeql-action/analyze@v3
         with:
           category: "/language:${{ matrix.language }}"
