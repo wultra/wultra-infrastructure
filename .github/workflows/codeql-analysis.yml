@@ -5,7 +5,7 @@ on:
         description: 'The programming languages the project is written in.'
         required: true
         type: string
-      java-version:
+      java_version:
         description: 'The version of Java to use.'
         required: false
         type: string
@@ -34,10 +34,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      - name: Set up JDK ${{ inputs.java-version }}
+      - name: Set up JDK ${{ inputs.java_version }}
         uses: actions/setup-java@v3
         with:
-          java-version: ${{ inputs.java-version }}
+          java-version: ${{ inputs.java_version }}
           distribution: 'temurin'
           server-id: ${{inputs.server-id}} #server id has to be passed this way it will not work via env in the test step
           server-username: INTERNAL_USERNAME
