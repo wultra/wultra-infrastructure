@@ -27,7 +27,7 @@ jobs:
       - name: Prepare Build
         run:  mvn -B --no-transfer-progress -DskipTests=true package
       - name: Upload Build Results
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: build-for-owasp
           path: ${{ inputs.directory_path }}
@@ -52,7 +52,7 @@ jobs:
           include_passed: false
           report_paths: '**/reports/*.xml'
       - name: Upload Report Results
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: Dependency Check Report
           path: reports
