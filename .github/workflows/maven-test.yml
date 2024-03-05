@@ -51,7 +51,7 @@ jobs:
           INTERNAL_PASSWORD: ${{ secrets.JFROG_PASSWORD }}
           BRANCH: ${{ github.ref_name }}
       - name: Publish Test Report
-        uses: mikepenz/action-junit-report@v3
+        uses: mikepenz/action-junit-report@v4
         if: always()
         with:
           detailed_summary: true
