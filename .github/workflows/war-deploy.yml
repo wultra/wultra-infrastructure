@@ -25,7 +25,7 @@ jobs:
           mkdir war
           cp **/target/*.war war 2>/dev/null || :
       - name: Publish WAR Artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: Application Artifacts
           path: 'war/*.war'

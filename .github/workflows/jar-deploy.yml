@@ -25,7 +25,7 @@ jobs:
           mkdir lib
           cp **/target/*.jar lib 2>/dev/null || :
       - name: Publish JAR Artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: Library Artifacts
           path: 'lib/*.jar'
