@@ -36,7 +36,7 @@ jobs:
       ENVIRONMENT: ${{ inputs.environment }}
       RELEASE_TYPE: ${{ inputs.release_type }}
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Set environment
         # Based on environment and release type of deploy we pick a distribution server - better than setup 3-4 different environments per repository
         run: |
