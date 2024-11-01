@@ -35,12 +35,18 @@ jobs:
           java-version: ${{ inputs.java_version }}
           distribution: 'temurin'
           cache: maven
+          server-id: jfrog-central
+          server-username: INTERNAL_USERNAME
+          server-password: INTERNAL_PASSWORD
       - name: Prepare Analysis
         run: |
           cd ${{ inputs.directory_path }}
           cov-build --dir cov-int mvn -DskipTests=true -DuseInternalRepo=true compile
           tar czvf ${{ inputs.project-name }}.tgz cov-int
           mkdir result && cp ${{ inputs.project-name }}.tgz result
+        env:
+          INTERNAL_USERNAME: ${{ secrets.JFROG_USERNAME }}
+          INTERNAL_PASSWORD: ${{ secrets.JFROG_PASSWORD }}
       - name: Storing Generated Artifacts
         uses: actions/upload-artifact@v4
         with:
