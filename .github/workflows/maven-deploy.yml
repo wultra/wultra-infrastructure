@@ -43,11 +43,11 @@ jobs:
           echo "$ENVIRONMENT:$RELEASE_TYPE"
           if [ "$ENVIRONMENT" == "maven-publish" ]; then
             if [ "$RELEASE_TYPE" == "release" ]; then
-              echo "setting server to ossrh-staging-distribution"
-              echo "server_id=ossrh-staging-distribution" >> $GITHUB_ENV
+              echo "setting server to central-portal-staging-distribution"
+              echo "server_id=central-portal-staging-distribution" >> $GITHUB_ENV
             elif [ "$RELEASE_TYPE" == "snapshot" ]; then
-              echo "setting server to ossrh-snapshots-distribution"
-              echo "server_id=ossrh-snapshots-distribution" >> $GITHUB_ENV
+              echo "setting server to central-portal-snapshots-distribution"
+              echo "server_id=central-portal-snapshots-distribution" >> $GITHUB_ENV
             fi
           elif [ "$ENVIRONMENT" == "internal-publish" ]; then
             echo "setting server to internal"
