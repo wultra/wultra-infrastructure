@@ -183,6 +183,11 @@ function main(projectPath, desiredVersion) {
             }
         }
     }
+
+    // If we're in a "verify mode" and the git is not clean, it's an error
+    if (verifyMode && verifyGitClean && !isGitClean()) {
+        logError('ERROR: The git repository is not clean. Files were created during the verification - that is an error.')
+    }
 }
 
 // HELPER FUNCTIONS
