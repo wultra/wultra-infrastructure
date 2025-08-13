@@ -6,6 +6,9 @@
  * It can also run in "verify" mode, which means it will read the version from the library definition file
  * and check if the release is prepared.
  * 
+ * Verify mode can be triggered by not providing the version number - in that case the version from the library definition file is used.
+ * Or you can specify the --verify option to run the script in verify mode.
+ * 
  * --------------------------------------------------------------
  * 
  * Usage:
@@ -15,6 +18,7 @@
  *                       If the version is not set, it will be read from the definition file and run in "verify" mode.
  *  -h, --help           Show this help message.
  *  --ignore-git-clean   Ignore the git clean state check.
+ *  --verify             Run the script in verify mode.
  * 
  * --------------------------------------------------------------
  * 
@@ -66,6 +70,7 @@ const { execSync } = require('child_process')
 let projectRoot = null
 let givenVersion = null
 let verifyGitClean = true
+let forceVerifyMode = false
 
 // Parse command line arguments
 for (i = 0; i < process.argv.length; i++) {
@@ -80,6 +85,9 @@ for (i = 0; i < process.argv.length; i++) {
     } else if (process.argv[i] === '--ignore-git-clean') {
         // Ignore the git clean state check
         verifyGitClean = false
+    } else if (process.argv[i] === '--verify') {
+        // Force the script to run in verify mode
+        forceVerifyMode = true
     }
 }
 
@@ -95,14 +103,14 @@ if (verifyGitClean && !isGitClean()) {
 }
 
 // Call the main function with the parsed arguments
-main(projectRoot, givenVersion)
+main(projectRoot, givenVersion, forceVerifyMode)
 
 // MAIN FUNCTION
 
-function main(projectPath, desiredVersion) {
-    
+function main(projectPath, desiredVersion, verifyMode) {
+
     // If the desired version is not provided, we will run in "verify" mode
-    const verifyMode = desiredVersion == null
+    verifyMode = verifyMode || desiredVersion == null
     // full path to the project root
     const fullPath = path.resolve(projectPath)
     // we expect the definition file to be in the project root
@@ -232,6 +240,7 @@ function verifyReleasePrepared(definition, projectFullPath, version, versionStre
         if (!fs.existsSync(filePath)) {
             logError(`  - ERROR: The file does not exist!`, false)
             hasErrors = true
+            continue
         }
         const fileContent = fs.readFileSync(filePath, 'utf8')
         const match = resolveMatch(file.match, version, versionStream)
