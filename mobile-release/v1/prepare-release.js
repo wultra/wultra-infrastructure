@@ -10,9 +10,11 @@
  * 
  * Usage:
  *   node scripts/prepare-release.js -p <path> -v <version>
- *  -p <path>     Path to the project root (required).
- *  -v <version>  Set desired version number (e.g. 1.4.2) to prepare
- *                If the version is not set, it will be read from the definition file and run in "verify" mode.
+ *  -p <path>            Path to the project root (required).
+ *  -v <version>         Set desired version number (e.g. 1.4.2) to prepare
+ *                       If the version is not set, it will be read from the definition file and run in "verify" mode.
+ *  -h, --help           Show this help message.
+ *  --ignore-git-clean   Ignore the git clean state check.
  * 
  * --------------------------------------------------------------
  * 
@@ -63,11 +65,7 @@ const { execSync } = require('child_process')
 
 let projectRoot = null
 let givenVersion = null
-
-// Check if the script is run in a clean git state
-if (!isGitClean()) {
-    logError('ERROR: The git repository is not clean. Please commit or stash your changes before running this script.')
-}
+let verifyGitClean = true
 
 // Parse command line arguments
 for (i = 0; i < process.argv.length; i++) {
@@ -79,6 +77,9 @@ for (i = 0; i < process.argv.length; i++) {
     } else if (process.argv[i] === '-v') {
         // Next argument should be the desired version
         givenVersion = process.argv[i + 1]
+    } else if (process.argv[i] === '--ignore-git-clean') {
+        // Ignore the git clean state check
+        verifyGitClean = false
     }
 }
 
@@ -86,6 +87,11 @@ for (i = 0; i < process.argv.length; i++) {
 if (projectRoot === null) {
     console.error('ERROR: You must specify the project path using -p option.')
     helpAndExit()
+}
+
+// Check if the script is run in a clean git state
+if (verifyGitClean && !isGitClean()) {
+    logError('ERROR: The git repository is not clean. Please commit or stash your changes before running this script.')
 }
 
 // Call the main function with the parsed arguments
