@@ -71,7 +71,7 @@ stages:
             set -eu
             pushd $(REPO)
             flutter pub token add https://pub.dev --env-var TOKEN
-            flutter pub publish --dry-run # --force # Remove dry-run and add force to actually publish once tested
+            flutter pub publish --force
           displayName: Publish to pub.dev
           condition: and(succeeded(), eq(variables['type'], 'flutter'))
           env:
