@@ -13,7 +13,7 @@
 # ----------------|-------------------
 #  type           | type of the library. Currently supported: flutter
 
-name: Mobile Token iOS Build
+name: Release Library
 appendCommitMessageToRunName: false # we dont want to see the commit message in the build name
 
 pool:
