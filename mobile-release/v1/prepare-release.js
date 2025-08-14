@@ -98,7 +98,7 @@ if (projectRoot === null) {
 }
 
 // Check if the script is run in a clean git state
-if (verifyGitClean && !isGitClean()) {
+if (verifyGitClean && !isGitClean(projectRoot)) {
     logError('ERROR: The git repository is not clean. Please commit or stash your changes before running this script.')
 }
 
@@ -193,7 +193,7 @@ function main(projectPath, desiredVersion, verifyMode) {
     }
 
     // If we're in a "verify mode" and the git is not clean, it's an error
-    if (verifyMode && verifyGitClean && !isGitClean()) {
+    if (verifyMode && verifyGitClean && !isGitClean(projectRoot)) {
         logError('ERROR: The git repository is not clean. Files were created during the verification - that is an error.')
     }
 }
@@ -278,7 +278,7 @@ function maskPatch(version) {
 
 function isGitClean() {
   try {
-    const output = execSync('git status --porcelain', { encoding: 'utf8' })
+    const output = execSync(`cd ${projectRoot} && git status --porcelain`, { encoding: 'utf8' })
     return output.trim().length === 0
   } catch (err) {
     console.error('Error checking git status:', err.message)
