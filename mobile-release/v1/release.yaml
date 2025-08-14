@@ -45,6 +45,11 @@ stages:
             git clone --branch $(BRANCH) https://x-access-token:$(GH_TOKEN)@github.com/wultra/$(REPO).git
           displayName: Set git config and clone repository
 
+        # INSTALL DEPENDENCIES
+        - bash: brew install flutter
+          displayName: Install Flutter
+          condition: and(succeeded(), eq(variables['type'], 'flutter'))
+
         # VERIFY THAT THE RELEASE IS PREPARED
         - bash: node ./mobile-release/v1/prepare-release.js -p $(REPO) -v $(VERSION) --verify
           displayName: Verify that the release is prepared
@@ -57,9 +62,6 @@ stages:
           displayName: Create Git tag
 
         # FLUTTER SECTION
-        - bash: brew install flutter
-          displayName: Install Flutter
-          condition: and(succeeded(), eq(variables['type'], 'flutter'))
         - bash: flutter pub token add https://pub.dev --env-var $(PUB_DEV_TOKEN)
           displayName: Add pub.dev token
           condition: and(succeeded(), eq(variables['type'], 'flutter'))
