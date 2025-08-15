@@ -148,9 +148,28 @@ function main(projectPath, desiredVersion, verifyMode) {
                     } else {
                         logError(' - No version found in pubspec.yaml')
                     }
-                    } catch (err) {
-                        logError(` - Error reading pubspec.yaml: ${err.message}`)
+                } catch (err) {
+                    logError(` - Error reading pubspec.yaml: ${err.message}`)
+                }
+                break
+            case 'ios-oss':
+                logInfo(` - iOS OSS library detected, reading version from podspec: ${definition.library.podspec}`)
+                const podspecPath = path.join(projectPath, definition.library.podspec)
+                try {
+                    const fileContents = fs.readFileSync(podspecPath, 'utf8')
+
+                    // Match "s.version = 'x.y.z+build'" allowing for spaces
+                    const match = fileContents.match(/s\.version\s*=\s*'([^']+)'/m)
+
+                    if (match) {
+                        desiredVersion = match[1]
+                        logInfo(` - Parsed version: ${desiredVersion}`)
+                    } else {
+                        logError(` - No version found in ${definition.library.podspec}`)
                     }
+                } catch (err) {
+                    logError(` - Error reading ${definition.library.podspec}: ${err.message}`)
+                }
                 break
             default:
                 logError(`ERROR: Unsupported library type: ${definition.library.type}.`)
@@ -175,6 +194,7 @@ function main(projectPath, desiredVersion, verifyMode) {
     verifyReleasePrepared(definition, fullPath, desiredVersion, versionStream)
 
     if (definition.scripts && definition.scripts.length > 0) {
+        let hasErrors = false
         logHeader('Run scripts from the definition file')
         for (const script of definition.scripts) {
             switch (script.type) {
@@ -189,6 +209,11 @@ function main(projectPath, desiredVersion, verifyMode) {
                 default:
                     logError(`  - ERROR: Unsupported script type: ${script.type}`, true)
             }
+        }
+        if (hasErrors) {
+            logError(' - Some scripts failed to execute. Please check the errors above.')
+        } else {
+            logSuccess(' - All scripts executed successfully.')
         }
     }
 
