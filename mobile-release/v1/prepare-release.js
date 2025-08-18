@@ -131,48 +131,42 @@ function main(projectPath, desiredVersion, verifyMode) {
     // If the version was not specificed, read it from the definition file
     // according to the library type
     if (desiredVersion == null) {
+
         logHeader('No version specified, retrieving from definition file')
+        let versionFile = null
+        let matchRegex = null
+
         switch (definition.library.type) {
             case 'flutter':
-                logInfo(' - Flutter library detected, reading version from pubspec.yaml...')
-                const pubspecPath = path.join(projectPath, 'pubspec.yaml')
-                try {
-                    const fileContents = fs.readFileSync(pubspecPath, 'utf8')
-
-                    // Match "version: x.y.z+build" allowing for spaces
-                    const match = fileContents.match(/^\s*version\s*:\s*([^\s#]+)/m)
-
-                    if (match) {
-                        desiredVersion = match[1]
-                        logInfo(` - Parsed version: ${desiredVersion}`)
-                    } else {
-                        logError(' - No version found in pubspec.yaml')
-                    }
-                } catch (err) {
-                    logError(` - Error reading pubspec.yaml: ${err.message}`)
-                }
+                versionFile = 'pubspec.yaml'
+                matchRegex = /^\s*version\s*:\s*([^\s#]+)/m
                 break
             case 'ios-oss':
-                logInfo(` - iOS OSS library detected, reading version from podspec: ${definition.library.podspec}`)
-                const podspecPath = path.join(projectPath, definition.library.podspec)
-                try {
-                    const fileContents = fs.readFileSync(podspecPath, 'utf8')
-
-                    // Match "s.version = 'x.y.z+build'" allowing for spaces
-                    const match = fileContents.match(/s\.version\s*=\s*'([^']+)'/m)
-
-                    if (match) {
-                        desiredVersion = match[1]
-                        logInfo(` - Parsed version: ${desiredVersion}`)
-                    } else {
-                        logError(` - No version found in ${definition.library.podspec}`)
-                    }
-                } catch (err) {
-                    logError(` - Error reading ${definition.library.podspec}: ${err.message}`)
-                }
+                versionFile = definition.library.podspec
+                matchRegex = /s\.version\s*=\s*'([^']+)'/m
+                break
+            case 'android-oss':
+                versionFile = definition.library.versionFile || 'library/gradle.properties' 
+                matchRegex = /^VERSION_NAME=([\d.]+(?:-[A-Za-z0-9._]+)?)$/m
                 break
             default:
                 logError(`ERROR: Unsupported library type: ${definition.library.type}.`)
+        }
+        logInfo(` - ${definition.library.type} library detected, reading version from ${versionFile}...`)
+        try {
+            const fileContents = fs.readFileSync(path.join(projectPath, versionFile), 'utf8')
+
+            // Match "version: x.y.z+build" allowing for spaces
+            const match = fileContents.match(matchRegex)
+
+            if (match) {
+                desiredVersion = match[1]
+                logInfo(` - Parsed version: ${desiredVersion}`)
+            } else {
+                logError(` - No version found in ${versionFile}. Please ensure the file contains a valid version definition.`)
+            }
+        } catch (err) {
+            logError(` - Error reading ${versionFile}: ${err.message}`)
         }
     }
 
