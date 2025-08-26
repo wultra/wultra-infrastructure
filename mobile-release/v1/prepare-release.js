@@ -35,7 +35,7 @@
  * Example definition file:
  * {
  *   "library": {
- *     "type": "flutter" // or other types in the future
+ *     "type": "flutter" // or: "ios-oss", "android-oss", "npm"
  *   },
  *   "files": [
  *     {
@@ -140,6 +140,10 @@ function main(projectPath, desiredVersion, verifyMode) {
             case 'flutter':
                 versionFile = 'pubspec.yaml'
                 matchRegex = /^\s*version\s*:\s*([^\s#]+)/m
+                break
+            case 'npm':
+                versionFile = 'package.json'
+                matchRegex = /^\s*"version"\s*:\s*"([^\s#]+)"/m
                 break
             case 'ios-oss':
                 versionFile = definition.library.podspec
