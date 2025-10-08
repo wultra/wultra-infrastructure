@@ -35,7 +35,7 @@
  * Example definition file:
  * {
  *   "library": {
- *     "type": "flutter" // or: "ios-oss", "android-oss", "npm"
+ *     "type": "flutter" // or: "ios-oss", "android-oss", "npm", "yarn"
  *   },
  *   "files": [
  *     {
@@ -142,6 +142,10 @@ function main(projectPath, desiredVersion, verifyMode) {
                 matchRegex = /^\s*version\s*:\s*([^\s#]+)/m
                 break
             case 'npm':
+                versionFile = 'package.json'
+                matchRegex = /^\s*"version"\s*:\s*"([^\s#]+)"/m
+                break
+            case 'yarn':
                 versionFile = 'package.json'
                 matchRegex = /^\s*"version"\s*:\s*"([^\s#]+)"/m
                 break
