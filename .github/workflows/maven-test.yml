@@ -14,6 +14,11 @@ on:
         type: string
         description: directory with pom.xml to be executed
         default: .
+      artifacts_path:
+        description: path to the directory from which artifacts will be uploaded, leave empty to disable uploading
+        type: string
+        required: false
+        default: ''
 
 
 jobs:
@@ -56,3 +61,10 @@ jobs:
         with:
           detailed_summary: true
           report_paths: '**/target/surefire-reports/*.xml'
+      - name: Upload artifacts
+        if: ${{ inputs.artifacts_path != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: artifacts
+          path: ${{ inputs.artifacts_path }}
+          if-no-files-found: warn
