@@ -65,6 +65,6 @@ jobs:
         if: ${{ inputs.artifacts_path != '' }}
         uses: actions/upload-artifact@v4
         with:
-          name: artifacts
+          name: maven-test-artifacts-${{ github.run_id }}
           path: ${{ inputs.artifacts_path }}
           if-no-files-found: warn
