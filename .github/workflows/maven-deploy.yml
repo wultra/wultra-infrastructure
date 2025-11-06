@@ -49,6 +49,7 @@ jobs:
               echo "setting server to central-portal-snapshots-distribution"
               echo "server_id=central-portal-snapshots-distribution" >> $GITHUB_ENV
             fi
+            echo "wait_max_time=18000" >> $GITHUB_ENV
           elif [ "$ENVIRONMENT" == "internal-publish" ]; then
             echo "setting server to internal"
             echo "server_id=jfrog-central" >> $GITHUB_ENV
