@@ -49,7 +49,7 @@ jobs:
               echo "setting server to central-portal-snapshots-distribution"
               echo "server_id=central-portal-snapshots-distribution" >> $GITHUB_ENV
             fi
-            echo "wait_max_time=18000" >> $GITHUB_ENV
+            echo "wait_max_time=18000" >> $GITHUB_ENV # Max time to wait until the artifact is 'published' on Maven Central
           elif [ "$ENVIRONMENT" == "internal-publish" ]; then
             echo "setting server to internal"
             echo "server_id=jfrog-central" >> $GITHUB_ENV
