@@ -30,7 +30,18 @@ runs:
           while IFS= read -r tag; do
             [[ -z "$tag" ]] && continue
             tag=$(echo "$tag" | tr -d '\n' | xargs)
-            digest=$(docker buildx imagetools inspect "$tag" --format "{{json .Manifest}}" | jq -r .digest | tr -d '\n')
+            echo "Inspecting $tag..."
+            if ! digest=$(docker buildx imagetools inspect "$tag" --format "{{json .Manifest}}" \
+              | jq -r .digest | tr -d '\n'); then
+              echo "::error::Failed to inspect image $tag"
+              exit 1
+            fi
+
+            if [[ -z "$digest" || "$digest" == "null" ]]; then
+              echo "::error::Digest not found for $tag"
+              exit 1
+            fi
+
             output+="${tag}@${digest} "
           done <<< "$input"
           echo "$output"
