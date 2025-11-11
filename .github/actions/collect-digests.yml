@@ -1,0 +1,43 @@
+name: "Resolve image digests"
+description: "Resolves TAGS and INIT_TAGS to digests and exports them as env + outputs"
+
+inputs:
+  TAGS:
+    description: "List of image tags"
+    required: true
+  INIT_TAGS:
+    description: "List of initial image tags"
+    required: true
+
+outputs:
+  TAGS_DIGESTS:
+    description: "Resolved digests for TAGS"
+  INIT_TAGS_DIGESTS:
+    description: "Resolved digests for INIT_TAGS"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Resolve digests
+      id: resolve
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        resolve_tags() {
+          local input="$1"
+          local output=""
+          while IFS= read -r tag; do
+            [[ -z "$tag" ]] && continue
+            tag=$(echo "$tag" | tr -d '\n' | xargs)
+            digest=$(docker buildx imagetools inspect "$tag" --format "{{json .Manifest}}" | jq -r .digest | tr -d '\n')
+            output+="${tag}@${digest} "
+          done <<< "$input"
+          echo "$output"
+        }
+
+        tags_digests=$(resolve_tags "${{ inputs.TAGS }}")
+        init_tags_digests=$(resolve_tags "${{ inputs.INIT_TAGS }}")
+
+        echo "TAGS_DIGESTS=${tags_digests}" >> "$GITHUB_OUTPUT"
+        echo "INIT_TAGS_DIGESTS=${init_tags_digests}" >> "$GITHUB_OUTPUT"
