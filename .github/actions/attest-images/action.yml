@@ -36,7 +36,7 @@ runs:
     - name: Verify attestation with a key
       shell: bash
       env:
-        COSIGN_PUBLIC_KEY: ${{ secrets.COSIGN_PUBLIC_KEY }}
+        COSIGN_PUBLIC_KEY: ${{ inputs.COSIGN_PUBLIC_KEY }}
       run: |
         cosign verify-attestation --key env://COSIGN_PUBLIC_KEY --type=cyclonedx ${{ inputs.IMAGES }} | jq -r .signatures
     - name: Verify images with a key
