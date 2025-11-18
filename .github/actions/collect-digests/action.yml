@@ -12,8 +12,10 @@ inputs:
 outputs:
   TAGS_DIGESTS:
     description: "Resolved digests for TAGS"
+    value: ${{ steps.resolve.outputs.TAGS_DIGESTS }}
   INIT_TAGS_DIGESTS:
     description: "Resolved digests for INIT_TAGS"
+    value: ${{ steps.resolve.outputs.INIT_TAGS_DIGESTS }}
 
 runs:
   using: "composite"
