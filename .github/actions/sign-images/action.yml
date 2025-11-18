@@ -31,3 +31,12 @@ runs:
         COSIGN_PUBLIC_KEY: ${{ inputs.COSIGN_PUBLIC_KEY }}
       run: |
         cosign verify --key env://COSIGN_PUBLIC_KEY ${{ inputs.IMAGES }}
+    - name: Add signed images to GitHub Summary
+      shell: bash
+      run: |
+        {
+          echo "### Signed Images";
+          for img in ${{ inputs.IMAGES }}; do
+            echo "- $img";
+          done
+        } >> $GITHUB_STEP_SUMMARY
