@@ -24,7 +24,7 @@ runs:
         COSIGN_PRIVATE_KEY: ${{ inputs.COSIGN_PRIVATE_KEY }}
         COSIGN_PASSWORD: ${{ inputs.COSIGN_PASSWORD }}
       run: |
-        cosign sign --key env://${{ inputs.COSIGN_PRIVATE_KEY == 'true' }} ${{ inputs.IMAGES }}
+        cosign sign --key env://COSIGN_PRIVATE_KEY ${{ inputs.IMAGES }}
     - name: Verify images with a key
       shell: bash
       env:
