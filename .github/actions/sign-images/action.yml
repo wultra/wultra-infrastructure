@@ -1,0 +1,42 @@
+name: "Sign images"
+description: "Action for signing images with a key"
+
+inputs:
+  COSIGN_PRIVATE_KEY:
+    description: "Private key for signing images"
+    required: true
+  COSIGN_PASSWORD:
+    description: "Password for private key"
+    required: true
+  COSIGN_PUBLIC_KEY:
+    description: "Public key for verifying signatures"
+    required: true
+  IMAGES:
+    description: "List of image tags"
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    - name: Sign images with a key
+      shell: bash
+      env:
+        COSIGN_PRIVATE_KEY: ${{ inputs.COSIGN_PRIVATE_KEY }}
+        COSIGN_PASSWORD: ${{ inputs.COSIGN_PASSWORD }}
+      run: |
+        cosign sign --key env://${{ inputs.COSIGN_PRIVATE_KEY == 'true' }} ${{ inputs.IMAGES }}
+    - name: Verify images with a key
+      shell: bash
+      env:
+        COSIGN_PUBLIC_KEY: ${{ inputs.COSIGN_PUBLIC_KEY }}
+      run: |
+        cosign verify --key env://COSIGN_PUBLIC_KEY ${{ inputs.IMAGES }}
+    - name: Add signed images to GitHub Summary
+      shell: bash
+      run: |
+        {
+          echo "### Signed Images";
+          for img in ${{ inputs.IMAGES }}; do
+            echo "- $img";
+          done
+        } >> $GITHUB_STEP_SUMMARY

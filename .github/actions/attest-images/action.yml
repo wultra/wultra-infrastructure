@@ -1,0 +1,56 @@
+name: "Attest images"
+description: "Action for signing and attesting images with CycloneDX SBOM"
+
+inputs:
+  COSIGN_PRIVATE_KEY:
+    description: "Private key for signing images"
+    required: true
+  COSIGN_PASSWORD:
+    description: "Password for private key"
+    required: true
+  COSIGN_PUBLIC_KEY:
+    description: "Public key for verifying signatures"
+    required: true
+  IMAGES:
+    description: "List of initial tags"
+    required: true
+  INPUT_FILES:
+    description: "SBOM files separated by space"
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    - name: Sign images with a SBOM
+      shell: bash
+      env:
+        COSIGN_PRIVATE_KEY: ${{ inputs.COSIGN_PRIVATE_KEY }}
+        COSIGN_PASSWORD: ${{ inputs.COSIGN_PASSWORD }}
+      run: |
+        docker run --rm \
+          -v ./deploy/sbom:/sbom:rw \
+          --entrypoint cyclonedx \
+          cyclonedx/cyclonedx-cli \
+          merge --input-files ${{ inputs.INPUT_FILES }} --output-file /sbom/powerauth-cloud-merged.cdx.json
+        cosign attest --key env://COSIGN_PRIVATE_KEY --predicate /sbom/merged.cdx.json --type=cyclonedx ${{ inputs.IMAGES }} | jq -r .signatures
+    - name: Verify attestation with a key
+      shell: bash
+      env:
+        COSIGN_PUBLIC_KEY: ${{ inputs.COSIGN_PUBLIC_KEY }}
+      run: |
+        cosign verify-attestation --key env://COSIGN_PUBLIC_KEY --type=cyclonedx ${{ inputs.IMAGES }} | jq -r .signatures
+    - name: Verify images with a key
+      shell: bash
+      env:
+        COSIGN_PUBLIC_KEY: ${{ inputs.COSIGN_PUBLIC_KEY }}
+      run: |
+        cosign verify --key env://COSIGN_PUBLIC_KEY ${{ inputs.IMAGES }}
+    - name: Add attested images to GitHub Summary
+      shell: bash
+      run: |
+        {
+          echo "### Signed Images";
+          for img in ${{ inputs.IMAGES }}; do
+            echo "- $img";
+          done
+        } >> $GITHUB_STEP_SUMMARY
