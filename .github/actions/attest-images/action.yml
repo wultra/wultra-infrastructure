@@ -31,8 +31,8 @@ runs:
           -v ./deploy/sbom:/sbom:rw \
           --entrypoint cyclonedx \
           cyclonedx/cyclonedx-cli \
-          merge --input-files ${{ inputs.INPUT_FILES }} --output-file /sbom/powerauth-cloud-merged.cdx.json
-        cosign attest --key env://COSIGN_PRIVATE_KEY --predicate /sbom/merged.cdx.json --type=cyclonedx ${{ inputs.IMAGES }} | jq -r .signatures
+          merge --input-files ${{ inputs.INPUT_FILES }} --output-file /sbom/merged.cdx.json
+        cosign attest --key env://COSIGN_PRIVATE_KEY --predicate ./deploy/sbom/merged.cdx.json --type=cyclonedx ${{ inputs.IMAGES }} | jq -r .signatures
     - name: Verify attestation with a key
       shell: bash
       env:
