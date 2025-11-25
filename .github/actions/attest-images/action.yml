@@ -17,6 +17,9 @@ inputs:
   INPUT_FILES:
     description: "SBOM files separated by space"
     required: true
+  INPUT_FILES_PATH:
+    description: "Path to SBOM files"
+    required: true
 
 runs:
   using: "composite"
@@ -28,7 +31,7 @@ runs:
         COSIGN_PASSWORD: ${{ inputs.COSIGN_PASSWORD }}
       run: |
         docker run --rm \
-          -v ./deploy/sbom:/sbom:rw \
+          -v ${{ inputs.INPUT_FILES_PATH }}:/sbom:rw \
           --entrypoint cyclonedx \
           cyclonedx/cyclonedx-cli \
           merge --input-files ${{ inputs.INPUT_FILES }} --output-file /sbom/merged.cdx.json
