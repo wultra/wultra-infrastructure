@@ -29,9 +29,14 @@ runs:
       env:
         COSIGN_PRIVATE_KEY: ${{ inputs.COSIGN_PRIVATE_KEY }}
         COSIGN_PASSWORD: ${{ inputs.COSIGN_PASSWORD }}
+        CONTAINER_PATH: /sbom
       run: |
+        MERGED_INPUTS=$(echo "$INPUT_FILES" \
+          | sed 's/[[:space:]]\+/\n/g' \
+          | sed "s:^\([^/]\):$CONTAINER_PATH/\1:g" \
+          | tr '\n' ' ')
         docker run --rm \
-          -v ${{ inputs.INPUT_FILES_PATH }}:/sbom:rw \
+          -v ${{ inputs.INPUT_FILES_PATH }}:$CONTAINER_PATH:rw \
           --entrypoint cyclonedx \
           cyclonedx/cyclonedx-cli \
           merge --input-files ${{ inputs.INPUT_FILES }} --output-file /sbom/merged.cdx.json
