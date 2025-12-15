@@ -39,7 +39,7 @@ runs:
               break
             fi
             echo "Waiting for signature to be available..."
-            sleep 3
+            sleep 5
           done
         done
     - name: Add signed images to GitHub Summary
