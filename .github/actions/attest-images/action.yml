@@ -41,13 +41,17 @@ runs:
       env:
         COSIGN_PUBLIC_KEY: ${{ inputs.COSIGN_PUBLIC_KEY }}
       run: |
-        cosign verify-attestation --key env://COSIGN_PUBLIC_KEY --type=cyclonedx ${{ inputs.IMAGES }} | jq -r .signatures
+        for img in ${{ inputs.IMAGES }}; do
+          cosign verify-attestation --key env://COSIGN_PUBLIC_KEY --type=cyclonedx "$img" | jq -r .signatures
+        done
     - name: Verify images with a key
       shell: bash
       env:
         COSIGN_PUBLIC_KEY: ${{ inputs.COSIGN_PUBLIC_KEY }}
       run: |
-        cosign verify --key env://COSIGN_PUBLIC_KEY ${{ inputs.IMAGES }}
+        for img in ${{ inputs.IMAGES }}; do
+          cosign verify --key env://COSIGN_PUBLIC_KEY "$img"
+        done
     - name: Add attested images to GitHub Summary
       shell: bash
       run: |

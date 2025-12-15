@@ -24,13 +24,17 @@ runs:
         COSIGN_PRIVATE_KEY: ${{ inputs.COSIGN_PRIVATE_KEY }}
         COSIGN_PASSWORD: ${{ inputs.COSIGN_PASSWORD }}
       run: |
-        cosign sign --key env://COSIGN_PRIVATE_KEY ${{ inputs.IMAGES }}
+        for img in ${{ inputs.IMAGES }}; do
+          cosign sign --key env://COSIGN_PRIVATE_KEY "$img"
+        done
     - name: Verify images with a key
       shell: bash
       env:
         COSIGN_PUBLIC_KEY: ${{ inputs.COSIGN_PUBLIC_KEY }}
       run: |
-        cosign verify --key env://COSIGN_PUBLIC_KEY ${{ inputs.IMAGES }}
+        for img in ${{ inputs.IMAGES }}; do
+          cosign verify --key env://COSIGN_PUBLIC_KEY "$img"
+        done
     - name: Add signed images to GitHub Summary
       shell: bash
       run: |
