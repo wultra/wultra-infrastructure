@@ -42,7 +42,14 @@ runs:
         COSIGN_PUBLIC_KEY: ${{ inputs.COSIGN_PUBLIC_KEY }}
       run: |
         for img in $(echo "${{ inputs.IMAGES }}"); do
-          cosign verify-attestation --key env://COSIGN_PUBLIC_KEY --type=cyclonedx "$img" | jq -r .signatures
+          for i in {1..5}; do
+            echo "Verification - iteration $i"
+            if cosign verify-attestation --key env://COSIGN_PUBLIC_KEY --type=cyclonedx "$img" | jq -r .signatures; then
+              break
+            fi
+            echo "Waiting for signature to be available..."
+            sleep 3
+          done
         done
     - name: Verify images with a key
       shell: bash
