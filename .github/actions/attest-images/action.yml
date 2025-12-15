@@ -43,7 +43,7 @@ runs:
       run: |
         for img in $(echo "${{ inputs.IMAGES }}"); do
           for i in {1..5}; do
-            echo "Verified - iteration $i"
+            echo "Verification - iteration $i"
             if cosign verify-attestation --key env://COSIGN_PUBLIC_KEY --type=cyclonedx "$img" | jq -r .signatures; then
               break
             fi

@@ -34,7 +34,7 @@ runs:
       run: |
         for img in $(echo "${{ inputs.IMAGES }}"); do
           for i in {1..5}; do
-            echo "Verified - iteration $i"
+            echo "Verification - iteration $i"
             if cosign verify --key env://COSIGN_PUBLIC_KEY "$img"; then
               break
             fi
