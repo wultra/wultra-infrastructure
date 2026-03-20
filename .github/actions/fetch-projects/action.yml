@@ -1,0 +1,71 @@
+name: "Fetch dependent projects"
+description: "Resolves Maven dependency versions from a pom.xml and checks out the corresponding GitHub repositories at the correct git reference."
+
+inputs:
+  dependencies:
+    description: |
+      JSON array describing dependencies that should be resolved and checked out.
+
+      Each entry must contain:
+        - maven_property: Maven property name that holds the dependency version
+        - repository: GitHub repository in the format "org/repo"
+        - path: Directory where the repository will be cloned
+
+      Example:
+      [
+        {
+          "maven_property": "powerauth-java-server.version",
+          "repository": "wultra/powerauth-server",
+          "path": "powerauth-server"
+        }
+      ]
+    required: true
+  pom_directory:
+    description: "Directory containing the pom.xml file from which Maven properties will be evaluated."
+    required: true
+  token:
+    description: "GitHub token used to authenticate when cloning private repositories."
+    required: true
+  snapshot_ref:
+    description: "Git reference (usually a branch) that will be used when the resolved Maven version contains 'SNAPSHOT'."
+    default: "develop"
+
+runs:
+  using: composite
+  steps:
+    - name: Resolve dependency versions and checkout repositories
+      id: resolve
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        echo "Resolving dependencies defined in inputs.dependencies"
+        echo '${{ inputs.dependencies }}' > deps.json
+
+        jq -c '.[]' deps.json | while IFS= read -r row; do
+          PROP=$(echo "$row" | jq -r '.maven_property')
+          REPO=$(echo "$row" | jq -r '.repository')
+          PATH_DIR=$(echo "$row" | jq -r '.path')
+
+          echo "Resolving Maven property: $PROP"
+
+          pushd "${{ inputs.pom_directory }}" > /dev/null
+          VERSION=$(mvn help:evaluate -Dexpression=$PROP -q -DforceStdout)
+          popd > /dev/null
+
+          if [[ "$VERSION" == *SNAPSHOT* ]]; then
+            REF="${{ inputs.snapshot_ref }}"
+            echo "Version $VERSION is SNAPSHOT → using ref $REF"
+          else
+            REF="$VERSION"
+            echo "Using ref $REF"
+          fi
+
+          echo "Cloning $REPO into $PATH_DIR"
+
+          git clone \
+            --depth 1 \
+            --branch "$REF" \
+            https://x-access-token:${{ inputs.token }}@github.com/$REPO.git \
+            "$PATH_DIR"
+        done

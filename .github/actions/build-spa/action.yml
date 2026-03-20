@@ -1,0 +1,40 @@
+name: "Build SPA project and generate SBOM"
+description: "Action for building SPA project and generating SBOM"
+
+inputs:
+  app_to_build:
+    description: "Application to build"
+    required: true
+  module_folder_path:
+    description: "Path to module folder"
+    required: true
+  generate_sbom:
+    description: "Whether to generate SBOM"
+    default: "true"
+
+outputs:
+  app_version:
+    description: Version of the application
+    value: ${{ steps.get_version.outputs.app_version }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Get ${{ inputs.app_to_build }} version
+      shell: bash
+      id: get_version
+      run: |
+        cd ./${{ inputs.module_folder_path }}
+        REVISION=$(jq -r .version package.json)
+        echo "app_version=$REVISION" >> $GITHUB_OUTPUT
+
+    - name: Prepare SBOM files
+      if: ${{ inputs.generate_sbom == 'true' }}
+      shell: bash
+      run: |
+        mkdir -p ./${{ inputs.module_folder_path }}/docker/sbom
+        cd ./${{ inputs.module_folder_path }}
+        corepack enable
+        corepack prepare yarn@stable --activate
+        yarn -v
+        yarn dlx -q @cyclonedx/yarn-plugin-cyclonedx > ./docker/sbom/${{ inputs.app_to_build }}.cdx.json
