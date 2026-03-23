@@ -32,53 +32,50 @@ runs:
     - name: Get ${{ inputs.app_to_build }} version
       shell: bash
       id: get_version
+      working-directory: ${{ inputs.module_folder_path != '' && inputs.module_folder_path || '.' }}
       run: |
-        if [ -z "${{ inputs.module_folder_path }}" ]; then
-          echo "APP_CONTEXT is empty"
+        if [ "${{ inputs.app_to_build }}" = "." ]; then
+          echo "Getting version of whole project in $(pwd)"
           REVISION=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)
-          echo "app_version=$REVISION" >> $GITHUB_OUTPUT
         else
-          echo "APP_CONTEXT is set"
+          echo "Getting version of module '${{ inputs.app_to_build }}' in $(pwd)"
           REVISION=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout -pl ${{ inputs.app_to_build }})
-          echo "app_version=$REVISION" >> $GITHUB_OUTPUT
         fi
-
+        echo "app_version=$REVISION" >> $GITHUB_OUTPUT
 
     - name: Prepare package
       shell: bash
       if: ${{ inputs.prepare_package == 'true' }}
+      working-directory: ${{ inputs.module_folder_path != '' && inputs.module_folder_path || '.' }}
       run: |
-        if [ -z "${{ inputs.module_folder_path }}" ]; then
-          echo "APP_CONTEXT is empty"
+        if [ "${{ inputs.app_to_build }}" = "." ]; then
+          echo "Packaging whole project in $(pwd)"
           mvn -U -DuseInternalRepo=true --no-transfer-progress clean package
         else
-          echo "APP_CONTEXT is set"
+          echo "Packaging module '${{ inputs.app_to_build }}' in $(pwd)"
           mvn -U -DuseInternalRepo=true --no-transfer-progress clean package -pl ${{ inputs.app_to_build }} -am
         fi
 
     - name: Prepare wars and libs
       shell: bash
       if: ${{ inputs.prepare_wars_and_libs == 'true'}}
+      working-directory: ${{ inputs.module_folder_path != '' && inputs.module_folder_path || '.' }}
       run: |
-        if [ -z "${{ inputs.module_folder_path }}" ]; then
-          echo "APP_CONTEXT is empty"
+        if [ "${{ inputs.app_to_build }}" = "." ]; then
+          echo "Preparing libs for whole project in $(pwd)"
           mvn -B -U dependency:copy-dependencies -DoutputDirectory=libs --no-transfer-progress
         else
-          echo "APP_CONTEXT is set"
-          mvn -B -U -pl ${{ inputs.module_folder_path }} dependency:copy-dependencies -DoutputDirectory=libs --no-transfer-progress
+          echo "Preparing libs for module '${{ inputs.app_to_build }}' in $(pwd)"
+          mvn -B -U -pl ${{ inputs.app_to_build }} dependency:copy-dependencies -DoutputDirectory=libs --no-transfer-progress
         fi
 
     - name: Prepare SBOM files
       if: ${{ inputs.generate_sbom == 'true' && inputs.prepare_wars_and_libs == 'true' }}
       shell: bash
+      working-directory: ${{ inputs.module_folder_path != '' && inputs.module_folder_path || '.' }}
       run: |
-        SBOM_DIR="./${{ inputs.module_folder_path }}/docker/sbom"
-        
-        if [ -z "${{ inputs.module_folder_path }}" ]; then
-          LIBS_DIR="./libs"
-        else
-          LIBS_DIR="./${{ inputs.module_folder_path }}/libs"
-        fi
+        SBOM_DIR="./docker/sbom"
+        LIBS_DIR="./libs"
         
         mkdir -p "$SBOM_DIR"
         
@@ -105,6 +102,9 @@ runs:
     - name: Prepare SBOM file
       if: ${{ inputs.generate_sbom == 'true' && inputs.prepare_wars_and_libs == 'false' }}
       shell: bash
+      working-directory: ${{ inputs.module_folder_path != '' && inputs.module_folder_path || '.' }}
       run: |
-        mkdir -p ./${{ inputs.module_folder_path }}/docker/sbom
-        unzip -p ./${{ inputs.module_folder_path }}/target/${{ inputs.output_name != '' && inputs.output_name || inputs.app_to_build }}*.war WEB-INF/classes/META-INF/sbom/application.cdx.json > ./${{ inputs.module_folder_path }}/docker/sbom/${{ inputs.app_to_build }}.cdx.json
+        mkdir -p ./docker/sbom
+        NAME='${{ inputs.output_name != '' && inputs.output_name || inputs.app_to_build }}'
+        if [ "$NAME" = "." ]; then NAME="app"; fi
+        unzip -p ./target/${NAME}*.war WEB-INF/classes/META-INF/sbom/application.cdx.json > ./docker/sbom/${NAME}.cdx.json
