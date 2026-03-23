@@ -1,0 +1,43 @@
+name: "Set environment and should_push variables"
+description: "Action for setting environment and should_push variables"
+
+inputs:
+  push_to_registry:
+    description: "Whether to push to registry (true/false)"
+    required: true
+  environment:
+    description: "Environment to deploy to (e.g., docker-internal, staging, production)"
+    required: false
+
+outputs:
+  environment:
+    description: "Set environment output"
+    value: ${{ steps.set-env.outputs.environment }}
+  should_push:
+    description: "Set should_push output"
+    value: ${{ steps.set-cond.outputs.should_push }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set environment output
+      id: set-env
+      shell: bash
+      run: |
+        if [ -z "${{ inputs.environment }}" ]; then
+          echo "environment=docker-internal" >> $GITHUB_OUTPUT
+        else
+          echo "environment=${{ inputs.environment }}" >> $GITHUB_OUTPUT
+        fi
+    - name: Set condition
+      id: set-cond
+      shell: bash
+      run: |
+        if [[ "${{ inputs.push_to_registry }}" == "true" || 
+              ("${{ github.ref }}" == "refs/heads/develop" && 
+               "${{ github.actor }}" != "dependabot[bot]" && 
+               "${{ github.event_name }}" == "push") ]]; then
+          echo "should_push=true" >> $GITHUB_OUTPUT
+        else
+          echo "should_push=false" >> $GITHUB_OUTPUT
+        fi

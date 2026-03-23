@@ -16,7 +16,7 @@ inputs:
     required: true
   INPUT_FILES:
     description: "SBOM files separated by space"
-    required: true
+    required: false
   INPUT_FILES_PATH:
     description: "Path to SBOM files"
     required: true
@@ -30,11 +30,24 @@ runs:
         COSIGN_PRIVATE_KEY: ${{ inputs.COSIGN_PRIVATE_KEY }}
         COSIGN_PASSWORD: ${{ inputs.COSIGN_PASSWORD }}
       run: |
+        INPUT_FILES="${{ inputs.INPUT_FILES }}"
+        INPUT_FILES_PATH="${{ inputs.INPUT_FILES_PATH }}"
+        
+        if [ -z "$INPUT_FILES" ]; then
+          FILES=$(find "$INPUT_FILES_PATH" -type f -name "*.cdx.json" \
+            | sed "s|^$INPUT_FILES_PATH|/sbom/|" \
+            | tr '\n' ' ')
+        else
+          FILES="$INPUT_FILES"
+        fi
+        
+        echo "FILES=$FILES"
+        
         docker run --rm \
           -v ${{ inputs.INPUT_FILES_PATH }}:/sbom:rw \
           --entrypoint cyclonedx \
           cyclonedx/cyclonedx-cli \
-          merge --input-files ${{ inputs.INPUT_FILES }} --output-file /sbom/merged.cdx.json
+          merge --input-files $FILES --output-file /sbom/merged.cdx.json
         cosign attest --key env://COSIGN_PRIVATE_KEY --predicate ${{ inputs.INPUT_FILES_PATH }}/merged.cdx.json --type=cyclonedx ${{ inputs.IMAGES }} | jq -r .signatures
     - name: Verify attestation with a key
       shell: bash

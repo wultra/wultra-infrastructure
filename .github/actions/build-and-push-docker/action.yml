@@ -1,0 +1,105 @@
+name: "Build and push docker image"
+description: "Action for building and pushing docker image"
+
+inputs:
+  dockerfile_folder_path:
+    description: "Path to dockerfile folder"
+    required: true
+  should_push:
+    description: "Whether to push to registry (true/false)"
+    default: 'false'
+  platforms:
+    description: "List of platforms to build for"
+    default: 'linux/amd64,linux/arm64'
+  tags:
+    description: "List of image tags"
+    required: true
+  has_sbom:
+    description: "Whether the application has SBOM file (true/false)"
+    required: false
+    default: 'true'
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@v4
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v4
+    - name: Log in to ACR
+      if: ${{ env.ACR_REGISTRY_URL != '' && github.actor != 'dependabot[bot]' }}
+      uses: docker/login-action@v4
+      with:
+        registry: ${{ env.ACR_REGISTRY_URL }}
+        username: ${{ env.ACR_USERNAME }}
+        password: ${{ env.ACR_PASSWORD }}
+    - name: Extract registry host
+      if: env.DISTRIBUTION_REGISTRY_URL != '' && github.actor != 'dependabot[bot]'
+      shell: bash
+      id: extract_registry_host
+      run: |
+        original="${{ env.DISTRIBUTION_REGISTRY_URL }}"
+        registry_host="${original%%/*}"
+        echo "::notice::Original: $original"
+        echo "::notice::Host only: $registry_host"
+        echo "registry_host=$registry_host" >> $GITHUB_OUTPUT
+    - name: Log in to Distribution registry
+      if: env.DISTRIBUTION_REGISTRY_URL != '' && github.actor != 'dependabot[bot]'
+      uses: docker/login-action@v4
+      with:
+        registry: ${{ steps.extract_registry_host.outputs.registry_host }}
+        username: ${{ env.DISTRIBUTION_USERNAME }}
+        password: ${{ env.DISTRIBUTION_PASSWORD }}
+    - name: Build and push container image to registry
+      uses: docker/build-push-action@v7
+      with:
+        push: ${{ inputs.should_push == 'true' }}
+        platforms: ${{ inputs.platforms }}
+        tags: ${{ inputs.tags }}
+        file: '${{ inputs.dockerfile_folder_path }}/Dockerfile'
+        context: .
+    - name: Resolve image digests
+      if: ${{ inputs.should_push == 'true' }}
+      id: digests
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        resolve_tags() {
+          local input="$1"
+          local output=""
+          while IFS= read -r tag; do
+            [[ -z "$tag" ]] && continue
+            tag=$(echo "$tag" | tr -d '\n' | xargs)
+            docker_output=$(docker buildx imagetools inspect "$tag" --format "{{json .Manifest}}")
+            digest=$(printf '%s' "$docker_output" | jq -r .digest | tr -d '\n')
+            output+="${tag}@${digest} "
+          done <<< "$input"
+          echo "$output"
+        }
+
+        tags_digests=$(resolve_tags "${{ inputs.tags }}")
+
+        echo "tags_digests=${tags_digests}" >> "$GITHUB_OUTPUT"
+    - name: Show results from outputs
+      shell: bash
+      if: ${{ inputs.should_push== 'true' }}
+      run: |
+        echo "tags_digests from outputs: ${{ steps.digests.outputs.tags_digests }}"
+    - name: Attest images with SBOMs with a key
+      if: ${{ inputs.should_push == 'true' && inputs.has_sbom == 'true'}}
+      uses: wultra/wultra-infrastructure/.github/actions/attest-images@issues/add-general-docker-workflow
+      with:
+        COSIGN_PRIVATE_KEY: ${{ env.COSIGN_PRIVATE_KEY }}
+        COSIGN_PASSWORD: ${{ env.COSIGN_PASSWORD }}
+        COSIGN_PUBLIC_KEY: ${{ env.COSIGN_PUBLIC_KEY }}
+        IMAGES: ${{ steps.digests.outputs.tags_digests }}
+        INPUT_FILES_PATH: '${{ inputs.dockerfile_folder_path }}/sbom/'
+    - name: Sign images without SBOM with a key
+      if: ${{ inputs.should_push == 'true' && inputs.has_sbom == 'false' }}
+      uses: wultra/wultra-infrastructure/.github/actions/sign-images@develop
+      with:
+        COSIGN_PRIVATE_KEY: ${{ env.COSIGN_PRIVATE_KEY }}
+        COSIGN_PASSWORD: ${{ env.COSIGN_PASSWORD }}
+        COSIGN_PUBLIC_KEY: ${{ env.COSIGN_PUBLIC_KEY }}
+        IMAGES: ${{ steps.digests.outputs.tags_digests }}

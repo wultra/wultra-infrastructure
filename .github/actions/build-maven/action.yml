@@ -1,0 +1,110 @@
+name: "Build Maven project and generate SBOM"
+description: "Action for building Maven project and generating SBOM"
+
+inputs:
+  app_to_build:
+    description: "Application to build"
+    required: true
+  module_folder_path:
+    description: "Path to module folder"
+    required: false
+  output_name:
+    description: "Name of the output file"
+    default: ''
+  prepare_package:
+    description: "Whether to prepare package"
+    default: 'true'
+  prepare_wars_and_libs:
+    description: "Whether to prepare wars and libs"
+    default: 'false'
+  generate_sbom:
+    description: "Whether to generate SBOM"
+    default: 'true'
+
+outputs:
+  app_version:
+    description: Version of the application
+    value: ${{ steps.get_version.outputs.app_version }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Get ${{ inputs.app_to_build }} version
+      shell: bash
+      id: get_version
+      run: |
+        if [ -z "${{ inputs.module_folder_path }}" ]; then
+          echo "APP_CONTEXT is empty"
+          REVISION=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)
+          echo "app_version=$REVISION" >> $GITHUB_OUTPUT
+        else
+          echo "APP_CONTEXT is set"
+          REVISION=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout -pl ${{ inputs.app_to_build }})
+          echo "app_version=$REVISION" >> $GITHUB_OUTPUT
+        fi
+
+
+    - name: Prepare package
+      shell: bash
+      if: ${{ inputs.prepare_package == 'true' }}
+      run: |
+        if [ -z "${{ inputs.module_folder_path }}" ]; then
+          echo "APP_CONTEXT is empty"
+          mvn -U -DuseInternalRepo=true --no-transfer-progress clean package
+        else
+          echo "APP_CONTEXT is set"
+          mvn -U -DuseInternalRepo=true --no-transfer-progress clean package -pl ${{ inputs.app_to_build }} -am
+        fi
+
+    - name: Prepare wars and libs
+      shell: bash
+      if: ${{ inputs.prepare_wars_and_libs == 'true'}}
+      run: |
+        if [ -z "${{ inputs.module_folder_path }}" ]; then
+          echo "APP_CONTEXT is empty"
+          mvn -B -U dependency:copy-dependencies -DoutputDirectory=libs --no-transfer-progress
+        else
+          echo "APP_CONTEXT is set"
+          mvn -B -U -pl ${{ inputs.module_folder_path }} dependency:copy-dependencies -DoutputDirectory=libs --no-transfer-progress
+        fi
+
+    - name: Prepare SBOM files
+      if: ${{ inputs.generate_sbom == 'true' && inputs.prepare_wars_and_libs == 'true' }}
+      shell: bash
+      run: |
+        SBOM_DIR="./${{ inputs.module_folder_path }}/docker/sbom"
+        
+        if [ -z "${{ inputs.module_folder_path }}" ]; then
+          LIBS_DIR="./libs"
+        else
+          LIBS_DIR="./${{ inputs.module_folder_path }}/libs"
+        fi
+        
+        mkdir -p "$SBOM_DIR"
+        
+        find "$LIBS_DIR" -type f \( -name "*.jar" -o -name "*.war" \) | while read FILE; do
+          NAME=$(basename "$FILE")
+          NAME="${NAME%.*}"
+        
+          echo "Checking $FILE"
+        
+          TMP="$SBOM_DIR/$NAME.tmp"
+  
+          if unzip -p "$FILE" WEB-INF/classes/META-INF/sbom/application.cdx.json > "$TMP" 2>/dev/null; then
+            mv "$TMP" "$SBOM_DIR/$NAME.cdx.json"
+            echo "SBOM extracted from $FILE"
+          elif unzip -p "$FILE" META-INF/sbom/application.cdx.json > "$TMP" 2>/dev/null; then
+            mv "$TMP" "$SBOM_DIR/$NAME.cdx.json"
+            echo "SBOM extracted from $FILE"
+          else
+            rm -f "$TMP"
+            echo "No SBOM in $FILE"
+          fi
+        done
+
+    - name: Prepare SBOM file
+      if: ${{ inputs.generate_sbom == 'true' && inputs.prepare_wars_and_libs == 'false' }}
+      shell: bash
+      run: |
+        mkdir -p ./${{ inputs.module_folder_path }}/docker/sbom
+        unzip -p ./${{ inputs.module_folder_path }}/target/${{ inputs.output_name != '' && inputs.output_name || inputs.app_to_build }}*.war WEB-INF/classes/META-INF/sbom/application.cdx.json > ./${{ inputs.module_folder_path }}/docker/sbom/${{ inputs.app_to_build }}.cdx.json
