@@ -4,7 +4,8 @@ description: "Action for building Maven project and generating SBOM"
 inputs:
   module_to_build:
     description: "Module to build"
-    required: true
+    required: false
+    default: '.'
   project_path:
     description: "Path to module folder"
     required: false
@@ -29,7 +30,7 @@ outputs:
 runs:
   using: "composite"
   steps:
-    - name: Get ${{ inputs.module_to_build }} version
+    - name: Get application version
       shell: bash
       id: get_version
       working-directory: ${{ inputs.project_path != '' && inputs.project_path || '.' }}
