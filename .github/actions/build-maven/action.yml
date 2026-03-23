@@ -107,5 +107,14 @@ runs:
       run: |
         mkdir -p ./docker/sbom
         NAME='${{ inputs.output_name != '' && inputs.output_name || inputs.module_to_build }}'
-        if [ "$NAME" = "." ]; then NAME="app"; fi
-        unzip -p ./target/${NAME}*.war WEB-INF/classes/META-INF/sbom/application.cdx.json > ./docker/sbom/${NAME}.cdx.json
+        
+        FILE=$(ls ./target/${NAME}*.{war,jar} 2>/dev/null | head -n 1)
+
+        if [[ "$FILE" == *.war ]]; then
+          unzip -p "$FILE" WEB-INF/classes/META-INF/sbom/application.cdx.json > ./docker/sbom/${NAME}.cdx.json
+        elif [[ "$FILE" == *.jar ]]; then
+          unzip -p "$FILE" META-INF/sbom/application.cdx.json > ./docker/sbom/${NAME}.cdx.json
+        else
+          echo "No WAR or JAR file found"
+          exit 1
+        fi
