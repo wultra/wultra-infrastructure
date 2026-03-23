@@ -88,7 +88,7 @@ runs:
         echo "tags_digests from outputs: ${{ steps.digests.outputs.tags_digests }}"
     - name: Attest images with SBOMs with a key
       if: ${{ inputs.should_push == 'true' && inputs.has_sbom == 'true'}}
-      uses: wultra/wultra-infrastructure/.github/actions/attest-images@issues/add-general-docker-workflow
+      uses: wultra/wultra-infrastructure/.github/actions/attest-images@develop
       with:
         COSIGN_PRIVATE_KEY: ${{ env.COSIGN_PRIVATE_KEY }}
         COSIGN_PASSWORD: ${{ env.COSIGN_PASSWORD }}
