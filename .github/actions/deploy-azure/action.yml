@@ -1,0 +1,53 @@
+name: "Deploy to Azure Web App"
+description: "Action to deploy a Docker image from Azure Container Registry to Azure Web App"
+
+inputs:
+  tags:
+    description: "Tags of the image which will be parsed to find the Azure ACR image to deploy (see the build pipeline)"
+    required: true
+  app_name:
+    description: "Name of the Azure Web App to deploy to"
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Extract Azure ACR image
+      shell: bash
+      id: extract-image
+      run: |
+        echo "INPUT TAGS:"
+        echo "${{ inputs.tags }}"
+        
+        if [ -z "${{ inputs.tags }}" ]; then
+          echo "ERROR: tags input is empty"
+          exit 1
+        fi
+        
+        MATCHES=$(echo "${{ inputs.tags }}" | grep 'azurecr.io' || true)
+        COUNT=$(echo "$MATCHES" | grep -c . || true)
+        
+        echo "Found $COUNT Azure ACR image(s)"
+        
+        if [ "$COUNT" -eq 0 ]; then
+          echo "ERROR: No Azure ACR image found"
+          exit 1
+        fi
+        
+        if [ "$COUNT" -gt 1 ]; then
+          echo "ERROR: Multiple Azure ACR images found:"
+          echo "$MATCHES"
+          exit 1
+        fi
+        
+        IMAGE=$(echo "$MATCHES" | head -n 1)
+        
+        echo "Selected image: $IMAGE"
+        echo "image=$IMAGE" >> $GITHUB_OUTPUT
+    - name: Deploy to Azure Web App
+      id: deploy-to-webapp
+      uses: azure/webapps-deploy@v3
+      with:
+        app-name: ${{ inputs.app_name }}
+        publish-profile: ${{ env.PUBLISH_PROFILE }}
+        images: ${{ steps.extract-image.outputs.image }}
