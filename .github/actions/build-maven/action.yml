@@ -114,7 +114,7 @@ runs:
           TARGET_DIR="./${{ inputs.module_to_build }}/target"
         fi
         
-        FILE=$(find "$TARGET_DIR" -maxdepth 1 -type f \( -name "${NAME}*.war" -o -name "${NAME}*.jar" \) | head -n 1)
+        FILE=$(find "$TARGET_DIR" -maxdepth 1 -type f \( -name "${NAME}.war" -o -name "${NAME}.jar" \) | head -n 1)
   
         if [[ -z "$FILE" ]]; then
           echo "No WAR or JAR file found"
