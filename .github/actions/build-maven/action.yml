@@ -128,6 +128,8 @@ runs:
           TARGET_DIR="./${{ inputs.module_to_build }}/target"
         fi
         
+        mkdir -p "$SBOM_DIR"
+        
         FILE=$(find "$TARGET_DIR" -maxdepth 1 -type f \( -name "${NAME}.war" -o -name "${NAME}.jar" \) | head -n 1)
   
         if [[ -z "$FILE" ]]; then
