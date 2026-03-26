@@ -138,7 +138,7 @@ runs:
         fi
         
         if [[ "$FILE" == *.war ]]; then
-          unzip -p "$FILE" WEB-INF/classes/META-INF/sbom/application.cdx.json > ./docker/sbom/${NAME}.cdx.json
+          unzip -p "$FILE" WEB-INF/classes/META-INF/sbom/application.cdx.json > ${SBOM_DIR}/${NAME}.cdx.json
         else
-          unzip -p "$FILE" META-INF/sbom/application.cdx.json > ./docker/sbom/${NAME}.cdx.json
+          unzip -p "$FILE" META-INF/sbom/application.cdx.json > ${SBOM_DIR}/${NAME}.cdx.json
         fi
