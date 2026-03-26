@@ -76,7 +76,12 @@ runs:
       working-directory: ${{ inputs.project_path != '' && inputs.project_path || '.' }}
       run: |
         SBOM_DIR="./docker/sbom"
-        LIBS_DIR="./libs"
+        
+        if [ "${{ inputs.module_to_build }}" = "." ]; then
+          LIBS_DIR="./libs"
+        else
+          LIBS_DIR="./${{ inputs.module_to_build }}/libs"
+        fi
         
         mkdir -p "$SBOM_DIR"
         
