@@ -75,7 +75,11 @@ runs:
       shell: bash
       working-directory: ${{ inputs.project_path != '' && inputs.project_path || '.' }}
       run: |
-        SBOM_DIR="./docker/sbom"
+        if [ "${{ inputs.module_to_build }}" = "." ]; then
+          SBOM_DIR="./docker/sbom"
+        else
+          SBOM_DIR="./${{ inputs.module_to_build }}/docker/sbom"
+        fi
         
         if [ "${{ inputs.module_to_build }}" = "." ]; then
           LIBS_DIR="./libs"
@@ -110,7 +114,12 @@ runs:
       shell: bash
       working-directory: ${{ inputs.project_path != '' && inputs.project_path || '.' }}
       run: |
-        mkdir -p ./docker/sbom
+        if [ "${{ inputs.module_to_build }}" = "." ]; then
+          SBOM_DIR="./docker/sbom"
+        else
+          SBOM_DIR="./${{ inputs.module_to_build }}/docker/sbom"
+        fi
+        
         NAME='${{ format('{0}-{1}', inputs.output_name != '' && inputs.output_name || inputs.module_to_build, steps.get_version.outputs.app_version) }}'
     
         if [ "${{ inputs.module_to_build }}" = "." ]; then
