@@ -106,7 +106,7 @@ runs:
       working-directory: ${{ inputs.project_path != '' && inputs.project_path || '.' }}
       run: |
         mkdir -p ./docker/sbom
-        NAME='${{ inputs.output_name != '' && inputs.output_name || inputs.module_to_build }}'
+        NAME='${{ format('{0}-{1}', inputs.output_name != '' && inputs.output_name || inputs.module_to_build, steps.get_version.outputs.app_version) }}'
     
         if [ "${{ inputs.module_to_build }}" = "." ]; then
           TARGET_DIR="./target"
