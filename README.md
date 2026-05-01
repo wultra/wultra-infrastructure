@@ -105,7 +105,7 @@ echo "Simulator to use: ${DESTINATION}"
 
 A Swift source-level utility that orchestrates PowerAuth activations and PowerAuth Cloud server interactions for integration tests of Wultra's iOS SDKs. It is shipped as a Swift package (`WultraPowerAuthTestIntegrationProxyV1`) defined by the [`Package.swift`](./Package.swift) in the repository root, with sources under [`mobile/utils/ios-test-proxy/v1`](./mobile/utils/ios-test-proxy/v1).
 
-The library depends on `PowerAuth2` and `PowerAuthCore` from [`powerauth-mobile-sdk-spm`](https://github.com/wultra/powerauth-mobile-sdk-spm). When `WultraPowerAuthNetworking` is also linked into the test target, the proxy additionally exposes a `createNetworkingService(url:serviceName:)` helper.
+The library depends on `PowerAuth2` and `PowerAuthCore` from [`powerauth-mobile-sdk-spm`](https://github.com/wultra/powerauth-mobile-sdk-spm).
 
 **What it provides**
 
