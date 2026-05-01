@@ -544,27 +544,3 @@ public struct OIDCProperties {
     public let providerId: String
     public let providerIdPkce: String
 }
-
-// MARK: - Networking service factory
-
-#if canImport(WultraPowerAuthNetworking)
-import WultraPowerAuthNetworking
-
-public extension IntegrationProxy {
-
-    /// Creates a `WPNNetworkingService` pointed at the given URL using this
-    /// proxy's PowerAuth instance. Throws `IntegrationError.powerAuthNotInitialized`
-    /// when called before `initializePowerauth()`.
-    func createNetworkingService(url: String, serviceName: String = UUID().uuidString) throws -> WPNNetworkingService {
-        guard let powerAuth else {
-            throw IntegrationError.powerAuthNotInitialized
-        }
-        WPNLogger.verboseLevel = .debug
-        return WPNNetworkingService(
-            powerAuth: powerAuth,
-            config: .init(baseUrl: URL(string: url)!),
-            serviceName: serviceName
-        )
-    }
-}
-#endif
