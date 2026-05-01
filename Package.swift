@@ -12,15 +12,10 @@ let package = Package(
         .library(
             name: "WultraPowerAuthTestIntegrationProxyV1",
             type: .dynamic,
-            targets: ["WultraPowerAuthTestIntegrationProxyV1"]),
-        .library(
-            name: "WultraPowerAuthTestIntegrationProxyV1-Networking",
-            type: .dynamic,
-            targets: ["WultraPowerAuthTestIntegrationProxyV1-Networking"])
+            targets: ["WultraPowerAuthTestIntegrationProxyV1"])
     ],
     dependencies: [
-        .package(url: "https://github.com/wultra/powerauth-mobile-sdk-spm.git", .upToNextMinor(from: "1.9.2")),
-        .package(url: "https://github.com/wultra/networking-apple.git", "1.0.0"..<"99.0.0")
+        .package(url: "https://github.com/wultra/powerauth-mobile-sdk-spm.git", .upToNextMinor(from: "1.9.2"))
     ],
     targets: [
         .target(
@@ -29,14 +24,7 @@ let package = Package(
                 .product(name: "PowerAuth2", package: "powerauth-mobile-sdk-spm"),
                 .product(name: "PowerAuthCore", package: "powerauth-mobile-sdk-spm")
             ],
-            path: "mobile/utils/ios-test-proxy/v1"),
-        .target(
-            name: "WultraPowerAuthTestIntegrationProxyV1-Networking",
-            dependencies: [
-                "WultraPowerAuthTestIntegrationProxyV1",
-                .product(name: "WultraPowerAuthNetworking", package: "networking-apple")
-            ],
-            path: "mobile/utils/ios-test-proxy/v1-networking")
+            path: "mobile/utils/ios-test-proxy/v1")
     ],
     swiftLanguageVersions: [.v5]
 )
