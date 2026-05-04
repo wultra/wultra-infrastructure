@@ -37,10 +37,10 @@ runs:
       run: |
         if [ "${{ inputs.module_to_build }}" = "." ]; then
           echo "Getting version of whole project in $(pwd)"
-          REVISION=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)
+          REVISION=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout -DuseInternalRepo=true)
         else
           echo "Getting version of module '${{ inputs.module_to_build }}' in $(pwd)"
-          REVISION=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout -pl ${{ inputs.module_to_build }})
+          REVISION=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout -DuseInternalRepo=true -pl ${{ inputs.module_to_build }})
         fi
         echo "app_version=$REVISION" >> $GITHUB_OUTPUT
 
