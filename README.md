@@ -126,12 +126,19 @@ Raw download URL (replace `<version>` with `v1` or `v2`):
 https://raw.githubusercontent.com/wultra/wultra-infrastructure/refs/heads/mobile/mobile/code/ios-test-proxy/<version>/IntegrationProxy.swift
 ```
 
-### Xcode build phase integration
+### Xcode scheme pre-action integration
 
-You can add a **Run Script** build phase to your test target that automatically downloads `IntegrationProxy.swift` if it is not already present. This way new contributors and CI runners get the file without manual steps.
+You can add the download script as a **Build Pre-action** in your test scheme so that `IntegrationProxy.swift` is fetched automatically before compilation. This way new contributors and CI runners get the file without manual steps.
 
-> [!IMPORTANT]
-> Set **`ENABLE_USER_SCRIPT_SANDBOXING = NO`** in your target's Build Settings for this script to work.
+**How to set it up:**
+
+1. Click on the scheme name (e.g. `MySDKTests`) at the top of the Xcode window.
+2. Select **Edit Scheme…**
+3. Expand the **Build** item on the left side of the editor.
+4. Select **Pre-actions**.
+5. Click **+** → **New Run Script Action**.
+6. Set **Provide build settings from** to your test target.
+7. Paste the script below.
 
 ```bash
 set -e
@@ -160,6 +167,7 @@ else
     # Verify that the file exists
     if [ -f "${FILE_PATH}" ]; then
         echo "File is present: ${FILE_PATH}"
+        sleep 3 # wait for 3 seconds to be sure xcode picks-up the file
     else
         echo "ERROR: File is still missing after download attempt."
         exit 1
