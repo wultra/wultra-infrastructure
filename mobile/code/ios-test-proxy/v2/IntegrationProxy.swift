@@ -1,4 +1,3 @@
-@@ -0,0 +1,544 @@
 //
 // Copyright 2026 Wultra s.r.o.
 //
