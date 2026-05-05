@@ -82,9 +82,9 @@ function parseDestinationList(output) {
     return destinations;
 }
 
-function selectDestination(destinations) {
+function selectDestination(destinations, rawOutput) {
     if (destinations.length === 0) {
-        fail("No eligible iOS Simulator destinations found.");
+        fail(`No eligible iOS Simulator destinations found.\n\nxcodebuild -showdestinations output:\n${rawOutput}`);
     }
 
     let best = destinations[0];
@@ -100,4 +100,4 @@ const { projectRoot, xcodeProjectPath, scheme } = parseArguments(process.argv.sl
 const output = resolveDestinations(projectRoot, xcodeProjectPath, scheme);
 const destinations = parseDestinationList(output);
 
-console.log(selectDestination(destinations));
+console.log(selectDestination(destinations, output));
