@@ -1,6 +1,6 @@
 # Wultra Infrastructure _[Mobile edition]_
 
-This branch hosts shared scripts and source-level utilities that support Wultra's mobile SDKs (iOS, Android, Flutter, React Native, …). Scripts are meant to be fetched directly from this repository (via `curl`) and executed on the consumer's CI or developer machine; source-level utilities (such as the iOS test integration proxy) are consumed via package managers like Swift Package Manager. In both cases, individual SDK repositories don't have to vendor and maintain their own copies.
+This branch hosts shared scripts and source-level utilities that support Wultra's mobile SDKs (iOS, Android, Flutter, React Native, …). Everything is fetched directly from this repository (via `curl` or a build-phase script) and executed on the consumer's CI or developer machine. Individual SDK repositories don't have to vendor and maintain their own copies.
 
 > [!NOTE]
 > This branch is not being synced with develop, and all changes have to be done via pull requests.
@@ -9,17 +9,16 @@ This branch hosts shared scripts and source-level utilities that support Wultra'
 
 - All shared assets live under the [`mobile/`](./mobile) folder.
 - Each asset is versioned by its path segment (`v1`, `v2`, …). A new major version is introduced whenever a breaking change is made; older versions remain available so existing consumers keep working.
-- Scripts are fetched from the `mobile` branch via `raw.githubusercontent.com`, e.g.:
+- Scripts and source files are fetched from the `mobile` branch via `raw.githubusercontent.com`, e.g.:
   ```
   https://raw.githubusercontent.com/wultra/wultra-infrastructure/refs/heads/mobile/mobile/<area>/<script>/<version>/<file>
   ```
-- Swift sources are exposed through a `Package.swift` at the repository root and consumed via Swift Package Manager.
 
 ## Requirements
 
 - **Node.js** – required for the Node-based scripts (no external npm dependencies).
 - **Bash** – the snippets below assume a POSIX shell (macOS / Linux / GitHub Actions runners).
-- **Swift 5.9+ / Xcode 15+** – required when consuming the iOS test integration proxy via SwiftPM.
+- **Xcode 15+** – required when using the iOS test integration proxy.
 
 ## Versioning policy
 
@@ -86,7 +85,7 @@ XCODE_SCHEME="MyAwesomeSDKTest"
 
 # Function that resolves the best available simulator for the test run
 function getSimulatorDestination {
-  local scriptUrl="https://raw.githubusercontent.com/wultra/wultra-infrastructure/refs/heads/mobile/mobile/utils/get-ios-simulator/v1/get-ios-sim.js"
+  local scriptUrl="https://raw.githubusercontent.com/wultra/wultra-infrastructure/refs/heads/mobile/mobile/utils/ios-get-simulator/v1/get-ios-sim.js"
   curl -fsSL "${scriptUrl}" | node - -p "${SCRIPT_FOLDER}/.." "${XCODE_PROJECT}" "${XCODE_SCHEME}"
 }
 
@@ -101,32 +100,78 @@ echo "Simulator to use: ${DESTINATION}"
 - [wultra/networking-apple – `scripts/test.sh`](https://github.com/wultra/networking-apple/blob/develop/scripts/test.sh)
 
 
-## iOS Test Integration Proxy [v1]
+## iOS Test Integration Proxy
 
-A Swift source-level utility that orchestrates PowerAuth activations and PowerAuth Cloud server interactions for integration tests of Wultra's iOS SDKs. It is shipped as a Swift package (`WultraPowerAuthTestIntegrationProxyV1`) defined by the [`Package.swift`](./Package.swift) in the repository root, with sources under [`mobile/utils/ios-test-proxy/v1`](./mobile/utils/ios-test-proxy/v1).
+A single-file Swift utility (`IntegrationProxy.swift`) that orchestrates PowerAuth activations and PowerAuth Cloud server interactions for integration tests of Wultra's iOS SDKs. The file is downloaded directly from this repository and added to your test target — no package manager dependency is required.
 
-The library depends on `PowerAuth2` and `PowerAuthCore` from [`powerauth-mobile-sdk-spm`](https://github.com/wultra/powerauth-mobile-sdk-spm).
+Sources live under [`mobile/code/ios-test-proxy/`](./mobile/code/ios-test-proxy/).
+
+| Version | Path | PowerAuth SDK compatibility |
+| --- | --- | --- |
+| **v1** | [`mobile/code/ios-test-proxy/v1/IntegrationProxy.swift`](./mobile/code/ios-test-proxy/v1/IntegrationProxy.swift) | PowerAuth SDK `1.9.x` |
+| **v2** | [`mobile/code/ios-test-proxy/v2/IntegrationProxy.swift`](./mobile/code/ios-test-proxy/v2/IntegrationProxy.swift) | PowerAuth SDK `2.0.x` |
 
 **What it provides**
 
 - `IntegrationProxy` – drives PowerAuth Cloud fixtures (operations, inbox messages, OIDC providers) and a fully activated `PowerAuthSDK` instance.
 - `Config` – connection details (cloud server URL & credentials, application id, enrollment server URL, optional OIDC providers). The mobile SDK configuration is fetched at runtime, not stored in `Config`.
 
-**Adding the package**
+**Adding to your project**
 
-In your test target's `Package.swift` (or via Xcode → *Add Package Dependencies*):
+Download the file into your test target's source tree. You can do this manually or automate it with an Xcode build phase (see below).
 
-```swift
-.package(url: "https://github.com/wultra/wultra-infrastructure.git", branch: "mobile")
+Raw download URL (replace `<version>` with `v1` or `v2`):
+
+```
+https://raw.githubusercontent.com/wultra/wultra-infrastructure/refs/heads/mobile/mobile/code/ios-test-proxy/<version>/IntegrationProxy.swift
 ```
 
-and add `WultraPowerAuthTestIntegrationProxyV1` to the test target's dependencies.
+### Xcode build phase integration
+
+You can add a **Run Script** build phase to your test target that automatically downloads `IntegrationProxy.swift` if it is not already present. This way new contributors and CI runners get the file without manual steps.
+
+> [!IMPORTANT]
+> Set **`ENABLE_USER_SCRIPT_SANDBOXING = NO`** in your target's Build Settings for this script to work.
+
+```bash
+set -e
+set -x
+
+# ---- CONFIG ----
+FILE_NAME="IntegrationProxy.swift"
+FILE_PATH="${SRCROOT}/WultraPowerAuthNetworkingTests/IntegrationTests/IntegrationProxy/${FILE_NAME}"
+DOWNLOAD_URL="https://raw.githubusercontent.com/wultra/wultra-infrastructure/refs/heads/mobile/mobile/code/ios-test-proxy/v1/${FILE_NAME}"
+
+# ---- LOGGING ----
+echo "Checking for required file at: ${FILE_PATH}"
+
+# ---- CHECK + DOWNLOAD ----
+if [ -f "${FILE_PATH}" ]; then
+    # print it as a warning just to be sure the runner will be notified
+    echo "warning: ${FILE_NAME} already exists. Skipping download. Be aware that this script does not check for new versions of the file. To update the file, delete it from the project first."
+else
+    echo "File not found. Downloading..."
+
+    # Download using curl
+    curl -L --fail --silent --show-error "${DOWNLOAD_URL}" -o "${FILE_PATH}"
+
+    echo "Download completed."
+
+    # Verify that the file exists
+    if [ -f "${FILE_PATH}" ]; then
+        echo "File is present: ${FILE_PATH}"
+    else
+        echo "ERROR: File is still missing after download attempt."
+        exit 1
+    fi
+fi
+```
+
+> Adjust `FILE_PATH` and `DOWNLOAD_URL` (version) to match your project layout and required proxy version.
 
 **Example usage**
 
 ```swift
-import WultraPowerAuthTestIntegrationProxyV1
-
 let config = Config(
     cloudServerUrl: "https://cloud.example.com",
     cloudServerLogin: "login",
@@ -144,3 +189,6 @@ let operation = try await proxy.createOperation()
 
 await proxy.cleanup()
 ```
+
+> [!NOTE]
+> **Why not Swift Package Manager?** SPM adds unnecessary overhead for a single utility file — it introduces an extra dependency to resolve, slows down package resolution, and complicates version management. Distributing the file directly makes it trivial to drop into any test target and easy to edit or replace locally when needed.

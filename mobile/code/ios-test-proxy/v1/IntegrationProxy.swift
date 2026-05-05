@@ -14,6 +14,8 @@
 // and limitations under the License.
 //
 
+// Requires PowerAuth SDK 1.9.x
+
 import Foundation
 import PowerAuth2
 
