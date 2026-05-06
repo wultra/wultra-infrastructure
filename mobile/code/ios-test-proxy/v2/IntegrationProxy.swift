@@ -72,6 +72,8 @@ import PowerAuth2
 ///   `IntegrationError.activationRequired`.
 /// - `cleanup()` is a no-op when no activation has been created.
 public class IntegrationProxy {
+    
+    private let proxyName: String
 
     // MARK: - Public state
 
@@ -96,9 +98,11 @@ public class IntegrationProxy {
     /// Creates a proxy bound to the given `Config`. The PowerAuth instance is
     /// not created yet; call `initializePowerauth()` to fetch the SDK
     /// configuration from the cloud server and instantiate `powerAuth`.
-    public init(config: Config, pin: String = UUID().uuidString) {
+    /// `proxyName` is to track the request when running in parallel.
+    public init(config: Config, proxyName: String = #function, pin: String = UUID().uuidString) {
         self.pin = pin
         self.config = config
+        self.proxyName = proxyName.replacingOccurrences(of: "()", with: "") // replace () in the end of the #function
     }
 
     // MARK: - PowerAuth setup
@@ -152,13 +156,14 @@ public class IntegrationProxy {
                     log("Local activation failed: \(error.localizedDescription)")
                     continuation.resume(throwing: error)
                 } else {
-                    do {
-                        try pa.persistActivation(withPassword: self.pin)
-                        log("Activation persisted successfully")
-                        continuation.resume()
-                    } catch {
-                        log("Persist activation failed: \(error.localizedDescription)")
-                        continuation.resume(throwing: error)
+                    pa.persistActivation(withPassword: self.pin) { error in
+                        if let error {
+                            self.log("Persist activation failed: \(error.localizedDescription)")
+                            continuation.resume(throwing: error)
+                        } else {
+                            self.log("Activation persisted successfully")
+                            continuation.resume()
+                        }
                     }
                 }
             }
@@ -392,7 +397,7 @@ public class IntegrationProxy {
     }
 
     private func log(_ message: String) {
-        print("[IntegrationProxy] \(message)")
+        print("[Proxy#\(proxyName)] \(message)")
     }
 }
 
