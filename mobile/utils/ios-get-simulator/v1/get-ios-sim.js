@@ -40,7 +40,7 @@ function resolveDestinations(projectRoot, xcodeProjectPath, scheme) {
     // Ask Xcode for the scheme's destinations so the selection matches what the server can actually run.
     const result = spawnSync(
         "xcodebuild",
-        ["-project", xcodeProjectPath, "-scheme", scheme, "-showdestinations"],
+        ["-project", xcodeProjectPath, "-scheme", scheme, "-showdestinations", "-disableAutomaticPackageResolution"],
         { cwd: projectRoot, encoding: "utf8" }
     );
 
