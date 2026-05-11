@@ -21,7 +21,7 @@ runs:
   using: "composite"
   steps:
     - name: Set Timestamp for docker image for development branch
-      if: "!(startsWith(github.ref, 'refs/heads/releases/') || startsWith(github.ref, 'refs/tags/'))"
+      if: "!(startsWith(github.ref, 'refs/heads/release/') || startsWith(github.ref, 'refs/heads/releases/') || startsWith(github.ref, 'refs/tags/'))"
       shell: bash
       run: echo "TIMESTAMP=-$(date +%Y.%m.%d)" >> $GITHUB_ENV
     - name: Set ${{ inputs.app_to_build }} variables
