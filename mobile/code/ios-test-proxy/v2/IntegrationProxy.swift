@@ -114,12 +114,12 @@ public class IntegrationProxy {
     public func initializePowerauth(algorithm: PowerAuthAlgorithm = .DEFAULT) async throws {
         let detail = try await getApplicationDetail()
         let pa = try PowerAuthSDK(configuration: .init(
-            instanceId: "integration-test",
+            instanceId: UUID().uuidString,
             baseEndpointUrl: config.enrollmentServerUrl,
             configuration: detail.mobileSdkConfig,
             algorithm: algorithm
         ))
-        pa.removeActivationLocal()
+        pa.removeActivationLocal() // to be sure in case of UUID colision
         self.powerAuth = pa
         log("PowerAuthSDK initialized with baseEndpointUrl: \(config.enrollmentServerUrl)")
     }
