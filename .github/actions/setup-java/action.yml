@@ -4,7 +4,7 @@ description: "Action for setting up Java"
 inputs:
   java_version:
     description: "Version of Java to use"
-    default: '21'
+    default: '21' # Do not change the default to version 25, as it may break the build
 
 runs:
   using: "composite"
