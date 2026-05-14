@@ -111,12 +111,13 @@ public class IntegrationProxy {
     /// uses its `mobileSdkConfig` to instantiate `powerAuth`. Any local
     /// activation is cleared. Does **not** activate the instance — call
     /// `prepareActivation()` afterwards if the test needs an activation.
-    public func initializePowerauth() async throws {
+    public func initializePowerauth(algorithm: PowerAuthAlgorithm = .DEFAULT) async throws {
         let detail = try await getApplicationDetail()
         let pa = try PowerAuthSDK(configuration: .init(
             instanceId: "integration-test",
             baseEndpointUrl: config.enrollmentServerUrl,
-            configuration: detail.mobileSdkConfig
+            configuration: detail.mobileSdkConfig,
+            algorithm: algorithm
         ))
         pa.removeActivationLocal()
         self.powerAuth = pa
