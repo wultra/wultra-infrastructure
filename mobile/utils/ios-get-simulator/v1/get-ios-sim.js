@@ -82,22 +82,70 @@ function parseDestinationList(output) {
     return destinations;
 }
 
-function selectDestination(destinations, rawOutput) {
-    if (destinations.length === 0) {
-        fail(`No eligible iOS Simulator destinations found.\n\nxcodebuild -showdestinations output:\n${rawOutput}`);
+function resolveSimctlDestinations() {
+    const result = spawnSync(
+        "xcrun",
+        ["simctl", "list", "devices", "available", "-j"],
+        { encoding: "utf8" }
+    );
+
+    if (result.status !== 0) {
+        return [];
     }
 
+    let data;
+    try {
+        data = JSON.parse(result.stdout);
+    } catch {
+        return [];
+    }
+
+    const destinations = [];
+    const seen = new Set();
+
+    for (const [runtimeId, devices] of Object.entries(data.devices || {})) {
+        const iosMatch = runtimeId.match(/iOS[- ](\d+[- ]\d+(?:[- ]\d+)?)/i);
+        if (!iosMatch) continue;
+
+        const os = iosMatch[1].replace(/-/g, ".");
+
+        for (const device of devices) {
+            if (!device.isAvailable) continue;
+            if (!device.name.includes("iPhone")) continue;
+
+            const key = `${os}\u0000${device.name}`;
+            if (seen.has(key)) continue;
+
+            seen.add(key);
+            destinations.push({ os, name: device.name });
+        }
+    }
+
+    return destinations;
+}
+
+function selectBestDestination(destinations) {
     let best = destinations[0];
     for (const destination of destinations.slice(1)) {
         if (compareVersions(destination.os, best.os) > 0) {
             best = destination;
         }
     }
-    return `platform=iOS Simulator,OS=${best.os},name=${best.name}`;
+    return best;
 }
 
 const { projectRoot, xcodeProjectPath, scheme } = parseArguments(process.argv.slice(2));
 const output = resolveDestinations(projectRoot, xcodeProjectPath, scheme);
-const destinations = parseDestinationList(output);
+let destinations = parseDestinationList(output);
 
-console.log(selectDestination(destinations, output));
+if (destinations.length === 0) {
+    console.error("No simulators found via xcodebuild -showdestinations, falling back to simctl...");
+    destinations = resolveSimctlDestinations();
+}
+
+if (destinations.length === 0) {
+    fail(`No eligible iOS Simulator destinations found.\n\nxcodebuild -showdestinations output:\n${output}`);
+}
+
+const best = selectBestDestination(destinations);
+console.log(`platform=iOS Simulator,OS=${best.os},name=${best.name}`);
