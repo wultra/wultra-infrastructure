@@ -23,7 +23,9 @@ runs:
     - name: Set Timestamp for docker image for development branch
       if: "!(startsWith(github.ref, 'refs/heads/release/') || startsWith(github.ref, 'refs/heads/releases/') || startsWith(github.ref, 'refs/tags/'))"
       shell: bash
-      run: echo "TIMESTAMP=-$(date +%Y.%m.%d)" >> $GITHUB_ENV
+      run: |
+        echo "TIMESTAMP=-$(date +%Y.%m.%d)" >> $GITHUB_ENV
+        echo "TIMESTAMP_WITH_SHA=-$(date +%Y.%m.%d)-${{ github.sha }}" >> $GITHUB_ENV
     - name: Set ${{ inputs.app_to_build }} variables
       shell: bash
       run: |
@@ -38,7 +40,7 @@ runs:
         echo "INIT_IMAGE_NAME=$INIT_IMAGE_NAME" >> $GITHUB_ENV
 
         echo "----- Setting tags for distribution -----"
-        DIST_IMAGE_VERSION=${{ inputs.app_version }}
+        DIST_IMAGE_VERSION=${{ inputs.app_version }}${{ env.TIMESTAMP_WITH_SHA }}
         DIST_IMAGE_NAME=${{ inputs.app_to_build }}:${DIST_IMAGE_VERSION}
         DIST_INIT_IMAGE_NAME=${{ inputs.app_to_build }}-init:${DIST_IMAGE_VERSION}
 
