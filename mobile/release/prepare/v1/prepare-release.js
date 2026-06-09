@@ -3,6 +3,7 @@
  * prepare-release.js
  * 
  * This script prepares a new release of the sdk based on the definition file.
+ * It supports both stable versions (e.g. 1.2.3) and SNAPSHOT versions (e.g. 2.0.0-SNAPSHOT).
  * It can also run in "verify" mode, which means it will read the version from the library definition file
  * and check if the release is prepared.
  * 
@@ -14,7 +15,7 @@
  * Usage:
  *   node scripts/prepare-release.js -p <path> -v <version>
  *  -p <path>            Path to the project root (required).
- *  -v <version>         Set desired version number (e.g. 1.4.2) to prepare
+ *  -v <version>         Set desired version number (e.g. 1.4.2 or 2.0.0-SNAPSHOT) to prepare
  *                       If the version is not set, it will be read from the definition file and run in "verify" mode.
  *  -h, --help           Show this help message.
  *  --ignore-git-clean   Ignore the git clean state check.
@@ -178,9 +179,9 @@ function main(projectPath, desiredVersion, verifyMode) {
         }
     }
 
-    // verify that the version is in the correct format (major.minor.patch)
-    if (/^\d+\.\d+\.\d+$/.test(desiredVersion) === false) {
-        logError(`ERROR: Invalid release version format: ${desiredVersion}. Expected format is "major.minor.patch", e.g. "1.2.3".`)
+    // verify that the version is in the correct format (major.minor.patch or major.minor.patch-SNAPSHOT)
+    if (/^\d+\.\d+\.\d+(-SNAPSHOT)?$/.test(desiredVersion) === false) {
+        logError(`ERROR: Invalid release version format: ${desiredVersion}. Expected format is "major.minor.patch" (e.g. "1.2.3") or "major.minor.patch-SNAPSHOT" (e.g. "2.0.0-SNAPSHOT").`)
     }
 
     // Create a masked version stream (e.g. 1.2.x from 1.2.3) for version verification
@@ -294,8 +295,8 @@ function resolveMatch(match, version, versionStream) {
 }
 
 function maskPatch(version) {
-  // Match X.Y.Z where X,Y,Z are numbers
-  const match = version.match(/^(\d+)\.(\d+)\.(\d+)$/)
+  // Match X.Y.Z or X.Y.Z-SNAPSHOT where X,Y,Z are numbers
+  const match = version.match(/^(\d+)\.(\d+)\.(\d+)(-SNAPSHOT)?$/)
   if (!match) {
     throw new Error(`Invalid version format: ${version}`)
   }
@@ -322,13 +323,14 @@ This script prepares a new release of the sdk based on the definition file.
 If version is not provided, the script will run in "verify" mode, which means it will read the version from the definition file and check if the release is prepared.
 
 Options:
-  -v                        Set desired version number (e.g. 1.4.2).
+  -v                        Set desired version number (e.g. 1.4.2 or 2.0.0-SNAPSHOT).
                             If the version is not set, it will be read from the definition file 
                             and the script will turn into a "verify" mode.
   -p <path>                 Path to the project root (required).
   -h, --help                Show this help message.
 
 Example usage: prepare-release -p /path/to/project -v 1.4.2
+               prepare-release -p /path/to/project -v 2.0.0-SNAPSHOT
 ------------------------------------
 `)
     process.exit(1)
