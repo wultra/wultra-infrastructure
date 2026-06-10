@@ -47,7 +47,8 @@
  *     {
  *       "path": "CHANGELOG.md",
  *       "type": "version_verify", // verify that the CHANGELOG.md file contains the version
- *       "match": "## %VERSION%"
+ *       "match": "## %VERSION%",
+ *       "skipForSnapshot": true // optional: skip this file when preparing/verifying a SNAPSHOT version
  *     },
  *     {
  *       "path": "docs/Readme.md",
@@ -231,6 +232,10 @@ function main(projectPath, desiredVersion, verifyMode) {
 function prepareRelease(definition, projectFullPath, version, versionStream) {
     let hasErrors = false
     for (const file of definition.files) {
+        if (file.skipForSnapshot && version.endsWith('-SNAPSHOT')) {
+            logInfo(` - Skipping file (SNAPSHOT): ${file.path}`)
+            continue
+        }
         logInfo(` - Preparing file: ${file.path}`)
         const filePath = path.join(projectFullPath, file.path)
         if (!fs.existsSync(filePath)) {
@@ -262,6 +267,10 @@ function prepareRelease(definition, projectFullPath, version, versionStream) {
 function verifyReleasePrepared(definition, projectFullPath, version, versionStream) {
     let hasErrors = false
     for (const file of definition.files) {
+        if (file.skipForSnapshot && version.endsWith('-SNAPSHOT')) {
+            logInfo(` - Skipping verification (SNAPSHOT): ${file.path}`)
+            continue
+        }
         logInfo(` - Verifying required file: ${file.path}`)
         const filePath = path.join(projectFullPath, file.path)
         if (!fs.existsSync(filePath)) {
