@@ -3,6 +3,7 @@
  * prepare-release.js
  * 
  * This script prepares a new release of the sdk based on the definition file.
+ * It supports both stable versions (e.g., 1.2.3) and SNAPSHOT versions (e.g., 2.0.0-SNAPSHOT).
  * It can also run in "verify" mode, which means it will read the version from the library definition file
  * and check if the release is prepared.
  * 
@@ -14,7 +15,7 @@
  * Usage:
  *   node scripts/prepare-release.js -p <path> -v <version>
  *  -p <path>            Path to the project root (required).
- *  -v <version>         Set desired version number (e.g. 1.4.2) to prepare
+ *  -v <version>         Set the desired version number (e.g., 1.4.2 or 2.0.0-SNAPSHOT) to prepare
  *                       If the version is not set, it will be read from the definition file and run in "verify" mode.
  *  -h, --help           Show this help message.
  *  --ignore-git-clean   Ignore the git clean state check.
@@ -27,7 +28,7 @@
  * This script does not commit or push any changes to the repository nor create any tags.
  * 
  * This script expects a definition file `.prepare-release.json` in the project root.
- * You can visit the example definition file in the mtoken-sdk-flutter repository to see how it should look like.
+ * You can visit the example definition file in the mtoken-sdk-flutter repository to see what it should look like.
  * https://github.com/wultra/mtoken-sdk-flutter/
  * 
  * --------------------------------------------------------------
@@ -46,7 +47,8 @@
  *     {
  *       "path": "CHANGELOG.md",
  *       "type": "version_verify", // verify that the CHANGELOG.md file contains the version
- *       "match": "## %VERSION%"
+ *       "match": "## %VERSION%",
+ *       "skipForSnapshot": true // optional: skip this file when preparing/verifying a SNAPSHOT version
  *     },
  *     {
  *       "path": "docs/Readme.md",
@@ -123,12 +125,12 @@ function main(projectPath, desiredVersion, verifyMode) {
     // read and parse the definition file
     const definition = JSON.parse(fs.readFileSync(definitionFilePath, 'utf8'))
 
-    // Make sure the definition files contains some files to prepare
+    // Make sure the definition files contain some files to prepare
     if (definition.files == null || definition.files.length === 0) {
         logError('ERROR: The definition file does not contain any files to prepare.')
     }
 
-    // If the version was not specificed, read it from the definition file
+    // If the version was not specified, read it from the definition file
     // according to the library type
     if (desiredVersion == null) {
 
@@ -178,12 +180,12 @@ function main(projectPath, desiredVersion, verifyMode) {
         }
     }
 
-    // verify that the version is in the correct format (major.minor.patch)
-    if (/^\d+\.\d+\.\d+$/.test(desiredVersion) === false) {
-        logError(`ERROR: Invalid release version format: ${desiredVersion}. Expected format is "major.minor.patch", e.g. "1.2.3".`)
+    // verify that the version is in the correct format (major.minor.patch or major.minor.patch-SNAPSHOT)
+    if (/^\d+\.\d+\.\d+(-SNAPSHOT)?$/.test(desiredVersion) === false) {
+        logError(`ERROR: Invalid release version format: ${desiredVersion}. Expected format is "major.minor.patch" (e.g. "1.2.3") or "major.minor.patch-SNAPSHOT" (e.g. "2.0.0-SNAPSHOT").`)
     }
 
-    // Create a masked version stream (e.g. 1.2.x from 1.2.3) for version verification
+    // Create a masked version stream (e.g., 1.2.x from 1.2.3) for version verification
     const versionStream = maskPatch(desiredVersion)
 
     // If the script is not in the verify mode, modify the files according to the definition
@@ -192,7 +194,7 @@ function main(projectPath, desiredVersion, verifyMode) {
         prepareRelease(definition, fullPath, desiredVersion, versionStream)
     }
 
-    logHeader('Veryfying that all required files are present and contain the expected content')
+    logHeader('Verifying that all required files are present and contain the expected content')
     verifyReleasePrepared(definition, fullPath, desiredVersion, versionStream)
 
     if (definition.scripts && definition.scripts.length > 0) {
@@ -230,6 +232,10 @@ function main(projectPath, desiredVersion, verifyMode) {
 function prepareRelease(definition, projectFullPath, version, versionStream) {
     let hasErrors = false
     for (const file of definition.files) {
+        if (file.skipForSnapshot && version.endsWith('-SNAPSHOT')) {
+            logInfo(` - Skipping file (SNAPSHOT): ${file.path}`)
+            continue
+        }
         logInfo(` - Preparing file: ${file.path}`)
         const filePath = path.join(projectFullPath, file.path)
         if (!fs.existsSync(filePath)) {
@@ -251,7 +257,6 @@ function prepareRelease(definition, projectFullPath, version, versionStream) {
         } else {
             logError(`  - ERROR: Unsupported file type: ${file.type}`, false)
             hasErrors = true
-            continue
         }
     }
     if (hasErrors) {
@@ -262,6 +267,10 @@ function prepareRelease(definition, projectFullPath, version, versionStream) {
 function verifyReleasePrepared(definition, projectFullPath, version, versionStream) {
     let hasErrors = false
     for (const file of definition.files) {
+        if (file.skipForSnapshot && version.endsWith('-SNAPSHOT')) {
+            logInfo(` - Skipping verification (SNAPSHOT): ${file.path}`)
+            continue
+        }
         logInfo(` - Verifying required file: ${file.path}`)
         const filePath = path.join(projectFullPath, file.path)
         if (!fs.existsSync(filePath)) {
@@ -294,8 +303,8 @@ function resolveMatch(match, version, versionStream) {
 }
 
 function maskPatch(version) {
-  // Match X.Y.Z where X,Y,Z are numbers
-  const match = version.match(/^(\d+)\.(\d+)\.(\d+)$/)
+  // Match X.Y.Z or X.Y.Z-SNAPSHOT where X,Y,Z are numbers
+  const match = version.match(/^(\d+)\.(\d+)\.(\d+)(-SNAPSHOT)?$/)
   if (!match) {
     throw new Error(`Invalid version format: ${version}`)
   }
@@ -319,16 +328,17 @@ function helpAndExit() {
 
 This script prepares a new release of the sdk based on the definition file.
 
-If version is not provided, the script will run in "verify" mode, which means it will read the version from the definition file and check if the release is prepared.
+If a version is not provided, the script will run in "verify" mode, which means it will read the version from the definition file and check if the release is prepared.
 
 Options:
-  -v                        Set desired version number (e.g. 1.4.2).
-                            If the version is not set, it will be read from the definition file 
+  -v                        Set the desired version number (e.g., 1.4.2 or 2.0.0-SNAPSHOT).
+                            If the version is not set, it will be read from the definition file, 
                             and the script will turn into a "verify" mode.
   -p <path>                 Path to the project root (required).
   -h, --help                Show this help message.
 
 Example usage: prepare-release -p /path/to/project -v 1.4.2
+               prepare-release -p /path/to/project -v 2.0.0-SNAPSHOT
 ------------------------------------
 `)
     process.exit(1)
