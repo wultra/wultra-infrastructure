@@ -8,6 +8,10 @@ inputs:
   app_version:
     description: "Application version"
     required: false
+  push_dockerhub_latest:
+    description: "Whether to also push 'latest' tag to the distribution registry (e.g. DockerHub)"
+    required: false
+    default: "false"
 
 outputs:
   tags:
@@ -47,6 +51,11 @@ runs:
         echo "dist_image_version=$DIST_IMAGE_VERSION" >> $GITHUB_ENV
         echo "DIST_IMAGE_NAME=$DIST_IMAGE_NAME" >> $GITHUB_ENV
         echo "DIST_INIT_IMAGE_NAME=$DIST_INIT_IMAGE_NAME" >> $GITHUB_ENV
+
+        if [[ "${{ inputs.push_dockerhub_latest }}" == "true" ]]; then
+          echo "DIST_LATEST_IMAGE_NAME=${{ inputs.app_to_build }}:latest" >> $GITHUB_ENV
+          echo "DIST_INIT_LATEST_IMAGE_NAME=${{ inputs.app_to_build }}-init:latest" >> $GITHUB_ENV
+        fi
     - name: Set dynamic tags for image
       id: set-dynamic-tags
       shell: bash
@@ -55,12 +64,14 @@ runs:
           echo "TAGS<<EOF"
             echo "${{ env.ACR_REGISTRY_URL != ''  && format('{0}/{1}', env.ACR_REGISTRY_URL, env.IMAGE_NAME) || '' }}"
             echo "${{ env.DISTRIBUTION_REGISTRY_URL != '' && format('{0}/{1}', env.DISTRIBUTION_REGISTRY_URL, env.DIST_IMAGE_NAME) || '' }}"
+            echo "${{ env.DISTRIBUTION_REGISTRY_URL != '' && env.DIST_LATEST_IMAGE_NAME != '' && format('{0}/{1}', env.DISTRIBUTION_REGISTRY_URL, env.DIST_LATEST_IMAGE_NAME) || '' }}"
           echo "EOF"
         } >> $GITHUB_OUTPUT
         {
          echo "INIT_TAGS<<EOF"
             echo "${{ env.ACR_REGISTRY_URL != ''  && format('{0}/{1}', env.ACR_REGISTRY_URL, env.INIT_IMAGE_NAME) || '' }}"
             echo "${{ env.DISTRIBUTION_REGISTRY_URL != '' && format('{0}/{1}', env.DISTRIBUTION_REGISTRY_URL, env.DIST_INIT_IMAGE_NAME) || '' }}"
+            echo "${{ env.DISTRIBUTION_REGISTRY_URL != '' && env.DIST_INIT_LATEST_IMAGE_NAME != '' && format('{0}/{1}', env.DISTRIBUTION_REGISTRY_URL, env.DIST_INIT_LATEST_IMAGE_NAME) || '' }}"
           echo "EOF"
         } >> $GITHUB_OUTPUT
 
