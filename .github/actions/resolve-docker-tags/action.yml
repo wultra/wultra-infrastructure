@@ -8,7 +8,7 @@ inputs:
   app_version:
     description: "Application version"
     required: false
-  push_dockerhub_latest:
+  push_latest:
     description: "Whether to also push 'latest' tag to the distribution registry (e.g. DockerHub)"
     required: false
     default: "false"
@@ -52,7 +52,7 @@ runs:
         echo "DIST_IMAGE_NAME=$DIST_IMAGE_NAME" >> $GITHUB_ENV
         echo "DIST_INIT_IMAGE_NAME=$DIST_INIT_IMAGE_NAME" >> $GITHUB_ENV
 
-        if [[ "${{ inputs.push_dockerhub_latest }}" == "true" ]]; then
+        if [[ "${{ inputs.push_latest }}" == "true" ]]; then
           echo "DIST_LATEST_IMAGE_NAME=${{ inputs.app_to_build }}:latest" >> $GITHUB_ENV
           echo "DIST_INIT_LATEST_IMAGE_NAME=${{ inputs.app_to_build }}-init:latest" >> $GITHUB_ENV
         fi
