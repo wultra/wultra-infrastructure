@@ -9,7 +9,7 @@ inputs:
     description: "Application version"
     required: false
   push_latest:
-    description: "Whether to also push 'latest' tag to the distribution registry (e.g. DockerHub)"
+    description: "Whether to also push 'latest' tag to the distribution registry"
     required: false
     default: "false"
 
