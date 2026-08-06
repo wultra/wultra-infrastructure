@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 // Resolve the best available iOS Simulator destination for an Xcode project scheme.
-// The script expects: -p <project-root> <xcodeproj-path> <scheme-name>
+// The script expects: [--iphone] -p <project-root> <xcodeproj-path> <scheme-name>
 
 const { spawnSync } = require("node:child_process");
 
@@ -11,13 +11,18 @@ function fail(message) {
 }
 
 function parseArguments(argv) {
-    if (argv.length !== 4 || argv[0] !== "-p") {
-        fail("Usage: node get-ios-sim.js -p <project-root> <xcodeproj-path> <scheme-name>");
+    const iphone = argv.filter(argument => argument === "--iphone");
+    const argumentsWithoutFlags = argv.filter(argument => argument !== "--iphone");
+
+    if (iphone.length > 1 || argumentsWithoutFlags.length !== 4 || argumentsWithoutFlags[0] !== "-p") {
+        fail("Usage: node get-ios-sim.js [--iphone] -p <project-root> <xcodeproj-path> <scheme-name>");
     }
+
     return {
-        projectRoot: argv[1],
-        xcodeProjectPath: argv[2],
-        scheme: argv[3]
+        projectRoot: argumentsWithoutFlags[1],
+        xcodeProjectPath: argumentsWithoutFlags[2],
+        scheme: argumentsWithoutFlags[3],
+        iphone: iphone.length === 1
     };
 }
 
@@ -51,7 +56,7 @@ function resolveDestinations(projectRoot, xcodeProjectPath, scheme) {
     return `${result.stdout}\n${result.stderr}`;
 }
 
-function parseDestinationList(output) {
+function parseDestinationList(output, iphoneOnly) {
     const destinations = [];
     const seen = new Set();
     const blocks = output.match(/\{[^}]+\}/g) || [];
@@ -70,6 +75,10 @@ function parseDestinationList(output) {
 
         const os = osMatch[1].trim();
         const name = nameMatch[1].trim();
+        if (iphoneOnly && !name.includes("iPhone")) {
+            continue;
+        }
+
         const key = `${os}\u0000${name}`;
         if (seen.has(key)) {
             continue;
@@ -134,9 +143,9 @@ function selectBestDestination(destinations) {
     return best;
 }
 
-const { projectRoot, xcodeProjectPath, scheme } = parseArguments(process.argv.slice(2));
+const { projectRoot, xcodeProjectPath, scheme, iphone } = parseArguments(process.argv.slice(2));
 const output = resolveDestinations(projectRoot, xcodeProjectPath, scheme);
-let destinations = parseDestinationList(output);
+let destinations = parseDestinationList(output, iphone);
 
 if (destinations.length === 0) {
     console.error("No simulators found via xcodebuild -showdestinations, falling back to simctl...");
