@@ -378,13 +378,23 @@ function confirmDirtyGitContinuation() {
     process.stdout.write('The git repository is not clean. Continue anyway? (y/n): ')
     let answer = ''
     const buffer = Buffer.alloc(1)
+    let terminal
 
-    while (true) {
-        const bytesRead = fs.readSync(0, buffer, 0, 1, null)
-        if (bytesRead === 0 || buffer[0] === 10 || buffer[0] === 13) {
-            break
+    try {
+        terminal = fs.openSync('/dev/tty', 'r')
+        while (true) {
+            const bytesRead = fs.readSync(terminal, buffer, 0, 1, null)
+            if (bytesRead === 0 || buffer[0] === 10 || buffer[0] === 13) {
+                break
+            }
+            answer += buffer.toString()
         }
-        answer += buffer.toString()
+    } catch (error) {
+        logError(`ERROR: Unable to read confirmation from the terminal: ${error.message}`)
+    } finally {
+        if (terminal != null) {
+            fs.closeSync(terminal)
+        }
     }
 
     return answer.trim().toLowerCase() === 'y'
