@@ -19,11 +19,13 @@
  *                       If the version is not set, it will be read from the definition file and run in "verify" mode.
  *  -h, --help           Show this help message.
  *  --ignore-git-clean   Ignore the git clean state check.
+ *  --enforce-git-clean  Exit when the git repository is not clean.
  *  --verify             Run the script in verify mode.
  * 
  * --------------------------------------------------------------
  * 
- * The script expects the project to be in a clean git state, meaning there are no uncommitted changes.
+ * When the git repository is not clean, the script prompts before continuing.
+ * Use --enforce-git-clean to exit instead, or --ignore-git-clean to skip the check.
  * 
  * This script does not commit or push any changes to the repository nor create any tags.
  * 
@@ -81,7 +83,8 @@ const { execSync } = require('child_process')
 
 let projectRoot = null
 let givenVersion = null
-let verifyGitClean = true
+let gitCleanMode = 'prompt'
+let gitWasCleanAtStart = null
 let forceVerifyMode = false
 
 // Parse command line arguments
@@ -96,7 +99,10 @@ for (i = 0; i < process.argv.length; i++) {
         givenVersion = process.argv[i + 1]
     } else if (process.argv[i] === '--ignore-git-clean') {
         // Ignore the git clean state check
-        verifyGitClean = false
+        gitCleanMode = 'ignore'
+    } else if (process.argv[i] === '--enforce-git-clean') {
+        // Exit if the git repository is not clean
+        gitCleanMode = 'enforce'
     } else if (process.argv[i] === '--verify') {
         // Force the script to run in verify mode
         forceVerifyMode = true
@@ -110,8 +116,16 @@ if (projectRoot === null) {
 }
 
 // Check if the script is run in a clean git state
-if (verifyGitClean && !isGitClean(projectRoot)) {
-    logError('ERROR: The git repository is not clean. Please commit or stash your changes before running this script.')
+if (gitCleanMode !== 'ignore') {
+    gitWasCleanAtStart = isGitClean(projectRoot)
+    if (!gitWasCleanAtStart) {
+        if (gitCleanMode === 'enforce') {
+            logError('ERROR: The git repository is not clean. Please commit or stash your changes before running this script.')
+        }
+        if (!confirmDirtyGitContinuation()) {
+            logError('ERROR: The git repository is not clean. Release preparation cancelled.')
+        }
+    }
 }
 
 // Call the main function with the parsed arguments
@@ -232,7 +246,7 @@ function main(projectPath, desiredVersion, verifyMode) {
     }
 
     // If we're in a "verify mode" and the git is not clean, it's an error
-    if (verifyMode && verifyGitClean && !isGitClean(projectRoot)) {
+    if (verifyMode && gitCleanMode !== 'ignore' && gitWasCleanAtStart && !isGitClean(projectRoot)) {
         logError('ERROR: The git repository is not clean. Files were created during the verification - that is an error.')
     }
 }
@@ -360,6 +374,22 @@ function expandDefinitionFiles(files) {
     return files.flatMap(file => getFilePaths(file).map(filePath => ({ ...file, path: filePath })))
 }
 
+function confirmDirtyGitContinuation() {
+    process.stdout.write('The git repository is not clean. Continue anyway? (y/n): ')
+    let answer = ''
+    const buffer = Buffer.alloc(1)
+
+    while (true) {
+        const bytesRead = fs.readSync(0, buffer, 0, 1, null)
+        if (bytesRead === 0 || buffer[0] === 10 || buffer[0] === 13) {
+            break
+        }
+        answer += buffer.toString()
+    }
+
+    return answer.trim().toLowerCase() === 'y'
+}
+
 function isSnapshotOrRC(version) {
   // Matches pre-release versions: -SNAPSHOT or -RCx (x is 1..N)
   return /(-SNAPSHOT|-RC[1-9]\d*)$/.test(version)
@@ -399,6 +429,8 @@ Options:
                             and the script will turn into a "verify" mode.
   -p <path>                 Path to the project root (required).
   -h, --help                Show this help message.
+  --ignore-git-clean        Ignore the git clean state check.
+  --enforce-git-clean       Exit when the git repository is not clean.
 
 Example usage: prepare-release -p /path/to/project -v 1.4.2
                prepare-release -p /path/to/project -v 2.0.0-SNAPSHOT
