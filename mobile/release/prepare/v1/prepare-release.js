@@ -56,8 +56,8 @@
  *       "skipForSnapshot": true // optional: skip this file when preparing/verifying a SNAPSHOT or RC version
  *     },
  *     {
- *       "path": "docs/Readme.md",
- *       "type": "versionstream_verify", // verify that the Readme.md file contains the version stream (e.g. 1.2.x)
+ *       "paths": ["docs/Readme.md", "README.md"],
+ *       "type": "versionstream_verify", // verify that both files contain the version stream (e.g. 1.2.x)
  *       "match": "| `%VERSION_STREAM%`"
  *     },
  *     {
@@ -241,7 +241,7 @@ function main(projectPath, desiredVersion, verifyMode) {
 
 function prepareRelease(definition, projectFullPath, version, versionStream) {
     let hasErrors = false
-    for (const file of definition.files) {
+    for (const file of expandDefinitionFiles(definition.files)) {
         if (file.skipForSnapshot && isSnapshotOrRC(version)) {
             logInfo(` - Skipping file (SNAPSHOT/RC): ${file.path}`)
             continue
@@ -290,7 +290,7 @@ function prepareRelease(definition, projectFullPath, version, versionStream) {
 
 function verifyReleasePrepared(definition, projectFullPath, version, versionStream) {
     let hasErrors = false
-    for (const file of definition.files) {
+    for (const file of expandDefinitionFiles(definition.files)) {
         if (file.skipForSnapshot && isSnapshotOrRC(version)) {
             logInfo(` - Skipping verification (SNAPSHOT/RC): ${file.path}`)
             continue
@@ -343,6 +343,21 @@ function resolveTbaMatch(match, version) {
         logError(`ERROR: Invalid tba_replace match: ${match}. The match must contain TBA or tba.`)
     }
     return match.replace(/tba/i, version)
+}
+
+function getFilePaths(file) {
+    if (file.path != null && file.paths != null) {
+        logError('ERROR: A file definition must specify either path or paths, not both.')
+    }
+    const filePaths = file.paths != null ? file.paths : [file.path]
+    if (!Array.isArray(filePaths) || filePaths.length === 0 || filePaths.some(filePath => typeof filePath !== 'string' || filePath.length === 0)) {
+        logError('ERROR: A file definition must specify a non-empty path or paths array.')
+    }
+    return filePaths
+}
+
+function expandDefinitionFiles(files) {
+    return files.flatMap(file => getFilePaths(file).map(filePath => ({ ...file, path: filePath })))
 }
 
 function isSnapshotOrRC(version) {
