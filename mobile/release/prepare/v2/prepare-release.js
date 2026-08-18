@@ -19,11 +19,13 @@
  *                       If the version is not set, it will be read from the definition file and run in "verify" mode.
  *  -h, --help           Show this help message.
  *  --ignore-git-clean   Ignore the git clean state check.
+ *  --enforce-git-clean  Exit when the git repository is not clean.
  *  --verify             Run the script in verify mode.
  * 
  * --------------------------------------------------------------
  * 
- * The script expects the project to be in a clean git state, meaning there are no uncommitted changes.
+ * When the git repository is not clean, the script prompts before continuing.
+ * Use --enforce-git-clean to exit instead, or --ignore-git-clean to skip the check.
  * 
  * This script does not commit or push any changes to the repository nor create any tags.
  * 
@@ -46,14 +48,24 @@
  *     },
  *     {
  *       "path": "CHANGELOG.md",
+ *       "type": "tba_replace", // replace TBA or tba in the match with the version
+ *       "match": "## TBA"
+ *     },
+ *     {
+ *       "path": "CHANGELOG.md",
  *       "type": "version_verify", // verify that the CHANGELOG.md file contains the version
  *       "match": "## %VERSION%",
  *       "skipForSnapshot": true // optional: skip this file when preparing/verifying a SNAPSHOT or RC version
  *     },
  *     {
- *       "path": "docs/Readme.md",
- *       "type": "versionstream_verify", // verify that the Readme.md file contains the version stream (e.g. 1.2.x)
+ *       "paths": ["docs/Readme.md", "README.md"],
+ *       "type": "versionstream_verify", // verify that both files contain the version stream (e.g. 1.2.x)
  *       "match": "| `%VERSION_STREAM%`"
+ *     },
+ *     {
+ *       "path": "CHANGELOG.md",
+ *       "type": "verify_not_containing", // verify that the CHANGELOG.md file does not contain the phrase
+ *       "match": "TBA"
  *     },
  *  ],
  *  "scripts": [
@@ -71,7 +83,8 @@ const { execSync } = require('child_process')
 
 let projectRoot = null
 let givenVersion = null
-let verifyGitClean = true
+let gitCleanMode = 'prompt'
+let gitWasCleanAtStart = null
 let forceVerifyMode = false
 
 // Parse command line arguments
@@ -86,7 +99,10 @@ for (i = 0; i < process.argv.length; i++) {
         givenVersion = process.argv[i + 1]
     } else if (process.argv[i] === '--ignore-git-clean') {
         // Ignore the git clean state check
-        verifyGitClean = false
+        gitCleanMode = 'ignore'
+    } else if (process.argv[i] === '--enforce-git-clean') {
+        // Exit if the git repository is not clean
+        gitCleanMode = 'enforce'
     } else if (process.argv[i] === '--verify') {
         // Force the script to run in verify mode
         forceVerifyMode = true
@@ -100,8 +116,16 @@ if (projectRoot === null) {
 }
 
 // Check if the script is run in a clean git state
-if (verifyGitClean && !isGitClean(projectRoot)) {
-    logError('ERROR: The git repository is not clean. Please commit or stash your changes before running this script.')
+if (gitCleanMode !== 'ignore') {
+    gitWasCleanAtStart = isGitClean(projectRoot)
+    if (!gitWasCleanAtStart) {
+        if (gitCleanMode === 'enforce') {
+            logError('ERROR: The git repository is not clean. Please commit or stash your changes before running this script.')
+        }
+        if (!confirmDirtyGitContinuation()) {
+            logError('ERROR: The git repository is not clean. Release preparation cancelled.')
+        }
+    }
 }
 
 // Call the main function with the parsed arguments
@@ -222,7 +246,7 @@ function main(projectPath, desiredVersion, verifyMode) {
     }
 
     // If we're in a "verify mode" and the git is not clean, it's an error
-    if (verifyMode && verifyGitClean && !isGitClean(projectRoot)) {
+    if (verifyMode && gitCleanMode !== 'ignore' && gitWasCleanAtStart && !isGitClean(projectRoot)) {
         logError('ERROR: The git repository is not clean. Files were created during the verification - that is an error.')
     }
 }
@@ -231,7 +255,7 @@ function main(projectPath, desiredVersion, verifyMode) {
 
 function prepareRelease(definition, projectFullPath, version, versionStream) {
     let hasErrors = false
-    for (const file of definition.files) {
+    for (const file of expandDefinitionFiles(definition.files)) {
         if (file.skipForSnapshot && isSnapshotOrRC(version)) {
             logInfo(` - Skipping file (SNAPSHOT/RC): ${file.path}`)
             continue
@@ -252,7 +276,21 @@ function prepareRelease(definition, projectFullPath, version, versionStream) {
             fs.writeFileSync(filePath, newContent, 'utf8')
             logSuccess(`  - File updated successfully!`)
 
-        } else if (file.type === 'version_verify' || file.type === 'versionstream_verify') {
+        } else if (file.type === 'tba_replace') {
+            const expectedMatch = resolveTbaMatch(file.match, version)
+            const tbaMatch = file.match.replace(/tba/i, '(?:TBA|tba)')
+            const tbaRegex = new RegExp(tbaMatch, 'g')
+            const fileContent = fs.readFileSync(filePath, 'utf8')
+
+            if (tbaRegex.test(fileContent)) {
+                const newContent = fileContent.replace(tbaRegex, expectedMatch)
+                fs.writeFileSync(filePath, newContent, 'utf8')
+                logSuccess(`  - File updated successfully!`)
+            } else {
+                logInfo(`  - TBA not found, verifying that the version is already present`)
+            }
+
+        } else if (file.type === 'version_verify' || file.type === 'versionstream_verify' || file.type === 'verify_not_containing') {
             logInfo(`  - This file needs to be updated manually`)
         } else {
             logError(`  - ERROR: Unsupported file type: ${file.type}`, false)
@@ -266,7 +304,7 @@ function prepareRelease(definition, projectFullPath, version, versionStream) {
 
 function verifyReleasePrepared(definition, projectFullPath, version, versionStream) {
     let hasErrors = false
-    for (const file of definition.files) {
+    for (const file of expandDefinitionFiles(definition.files)) {
         if (file.skipForSnapshot && isSnapshotOrRC(version)) {
             logInfo(` - Skipping verification (SNAPSHOT/RC): ${file.path}`)
             continue
@@ -279,10 +317,22 @@ function verifyReleasePrepared(definition, projectFullPath, version, versionStre
             continue
         }
         const fileContent = fs.readFileSync(filePath, 'utf8')
-        const match = resolveMatch(file.match, version, versionStream)
+        const match = file.type === 'tba_replace'
+            ? resolveTbaMatch(file.match, version)
+            : resolveMatch(file.match, version, versionStream)
+        if (file.type === 'verify_not_containing') {
+            if (fileContent.indexOf(match) !== -1) {
+                logError(`  - ERROR: contains forbidden match: ${match}`, false)
+                logWarning('  - This file requires manual update, please remove the forbidden content.')
+                hasErrors = true
+                continue
+            }
+            logSuccess(`  - OK: does not contain: \"${match}\"`)
+            continue
+        }
         if (fileContent.indexOf(match) === -1) {
             logError(`  - ERROR: does not contain required match: ${match}`, false)
-            if (file.type === 'version_verify' || file.type === 'versionstream_verify') {
+            if (file.type === 'version_verify' || file.type === 'versionstream_verify' || file.type === 'tba_replace') {
                 logWarning('  - This file requires manual update, please update it to match the desired version.')
             }
             hasErrors = true
@@ -300,6 +350,54 @@ function verifyReleasePrepared(definition, projectFullPath, version, versionStre
 
 function resolveMatch(match, version, versionStream) {
     return match.replace("%VERSION%", version).replace("%VERSION_STREAM%", versionStream)
+}
+
+function resolveTbaMatch(match, version) {
+    if (!/tba/i.test(match)) {
+        logError(`ERROR: Invalid tba_replace match: ${match}. The match must contain TBA or tba.`)
+    }
+    return match.replace(/tba/i, version)
+}
+
+function getFilePaths(file) {
+    if (file.path != null && file.paths != null) {
+        logError('ERROR: A file definition must specify either path or paths, not both.')
+    }
+    const filePaths = file.paths != null ? file.paths : [file.path]
+    if (!Array.isArray(filePaths) || filePaths.length === 0 || filePaths.some(filePath => typeof filePath !== 'string' || filePath.length === 0)) {
+        logError('ERROR: A file definition must specify a non-empty path or paths array.')
+    }
+    return filePaths
+}
+
+function expandDefinitionFiles(files) {
+    return files.flatMap(file => getFilePaths(file).map(filePath => ({ ...file, path: filePath })))
+}
+
+function confirmDirtyGitContinuation() {
+    process.stdout.write('The git repository is not clean. Continue anyway? (y/n): ')
+    let answer = ''
+    const buffer = Buffer.alloc(1)
+    let terminal
+
+    try {
+        terminal = fs.openSync('/dev/tty', 'r')
+        while (true) {
+            const bytesRead = fs.readSync(terminal, buffer, 0, 1, null)
+            if (bytesRead === 0 || buffer[0] === 10 || buffer[0] === 13) {
+                break
+            }
+            answer += buffer.toString()
+        }
+    } catch (error) {
+        logError(`ERROR: Unable to read confirmation from the terminal: ${error.message}`)
+    } finally {
+        if (terminal != null) {
+            fs.closeSync(terminal)
+        }
+    }
+
+    return answer.trim().toLowerCase() === 'y'
 }
 
 function isSnapshotOrRC(version) {
@@ -341,6 +439,8 @@ Options:
                             and the script will turn into a "verify" mode.
   -p <path>                 Path to the project root (required).
   -h, --help                Show this help message.
+  --ignore-git-clean        Ignore the git clean state check.
+  --enforce-git-clean       Exit when the git repository is not clean.
 
 Example usage: prepare-release -p /path/to/project -v 1.4.2
                prepare-release -p /path/to/project -v 2.0.0-SNAPSHOT
