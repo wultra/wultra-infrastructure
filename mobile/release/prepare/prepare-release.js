@@ -18,7 +18,7 @@ const path = require('path')
 const { execFileSync } = require('child_process')
 
 const RAW_REPOSITORY_URL =
-    'https://raw.githubusercontent.com/wultra/wultra-infrastructure/refs/heads/feature/tba/mobile/release/prepare'
+    'https://raw.githubusercontent.com/wultra/wultra-infrastructure/refs/heads/mobile/mobile/release/prepare'
 const DEFAULT_SCRIPT_VERSION = 1
 const MAX_REDIRECTS = 5
 
