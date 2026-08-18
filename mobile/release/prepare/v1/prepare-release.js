@@ -60,6 +60,11 @@
  *       "type": "versionstream_verify", // verify that the Readme.md file contains the version stream (e.g. 1.2.x)
  *       "match": "| `%VERSION_STREAM%`"
  *     },
+ *     {
+ *       "path": "CHANGELOG.md",
+ *       "type": "verify_not_containing", // verify that the CHANGELOG.md file does not contain the phrase
+ *       "match": "TBA"
+ *     },
  *  ],
  *  "scripts": [
  *    {
@@ -271,7 +276,7 @@ function prepareRelease(definition, projectFullPath, version, versionStream) {
                 logInfo(`  - TBA not found, verifying that the version is already present`)
             }
 
-        } else if (file.type === 'version_verify' || file.type === 'versionstream_verify') {
+        } else if (file.type === 'version_verify' || file.type === 'versionstream_verify' || file.type === 'verify_not_containing') {
             logInfo(`  - This file needs to be updated manually`)
         } else {
             logError(`  - ERROR: Unsupported file type: ${file.type}`, false)
@@ -301,6 +306,16 @@ function verifyReleasePrepared(definition, projectFullPath, version, versionStre
         const match = file.type === 'tba_replace'
             ? resolveTbaMatch(file.match, version)
             : resolveMatch(file.match, version, versionStream)
+        if (file.type === 'verify_not_containing') {
+            if (fileContent.indexOf(match) !== -1) {
+                logError(`  - ERROR: contains forbidden match: ${match}`, false)
+                logWarning('  - This file requires manual update, please remove the forbidden content.')
+                hasErrors = true
+                continue
+            }
+            logSuccess(`  - OK: does not contain: \"${match}\"`)
+            continue
+        }
         if (fileContent.indexOf(match) === -1) {
             logError(`  - ERROR: does not contain required match: ${match}`, false)
             if (file.type === 'version_verify' || file.type === 'versionstream_verify' || file.type === 'tba_replace') {
