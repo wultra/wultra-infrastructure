@@ -487,6 +487,7 @@ public struct OperationObject: Decodable {
 
 public struct TestAdditionalData: Decodable {
     public let mobileTokenData: TestMobileTokenData?
+    public let userAgent: String?
 }
 
 public struct TestMobileTokenData: Decodable {
