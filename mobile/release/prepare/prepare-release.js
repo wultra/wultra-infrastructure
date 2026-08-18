@@ -172,6 +172,8 @@ class PrepareReleaseDispatcher {
 
         const scriptVersion = new ScriptVersionResolver(options.projectRoot).resolve()
         const implementationUrl = ImplementationLocator.urlFor(scriptVersion)
+        console.log(`Resolved prepare-release script version: ${scriptVersion}`)
+        console.log(`Using prepare-release implementation: ${implementationUrl}`)
         const scriptContents = await new RemoteScriptLoader().load(implementationUrl)
         new VersionedScriptRunner().run(scriptContents, this.argv.slice(2))
     }
