@@ -46,6 +46,11 @@
  *     },
  *     {
  *       "path": "CHANGELOG.md",
+ *       "type": "tba_replace", // replace TBA or tba in the match with the version
+ *       "match": "## TBA"
+ *     },
+ *     {
+ *       "path": "CHANGELOG.md",
  *       "type": "version_verify", // verify that the CHANGELOG.md file contains the version
  *       "match": "## %VERSION%",
  *       "skipForSnapshot": true // optional: skip this file when preparing/verifying a SNAPSHOT or RC version
@@ -252,6 +257,20 @@ function prepareRelease(definition, projectFullPath, version, versionStream) {
             fs.writeFileSync(filePath, newContent, 'utf8')
             logSuccess(`  - File updated successfully!`)
 
+        } else if (file.type === 'tba_replace') {
+            const expectedMatch = resolveTbaMatch(file.match, version)
+            const tbaMatch = file.match.replace(/tba/i, '(?:TBA|tba)')
+            const tbaRegex = new RegExp(tbaMatch, 'g')
+            const fileContent = fs.readFileSync(filePath, 'utf8')
+
+            if (tbaRegex.test(fileContent)) {
+                const newContent = fileContent.replace(tbaRegex, expectedMatch)
+                fs.writeFileSync(filePath, newContent, 'utf8')
+                logSuccess(`  - File updated successfully!`)
+            } else {
+                logInfo(`  - TBA not found, verifying that the version is already present`)
+            }
+
         } else if (file.type === 'version_verify' || file.type === 'versionstream_verify') {
             logInfo(`  - This file needs to be updated manually`)
         } else {
@@ -279,10 +298,12 @@ function verifyReleasePrepared(definition, projectFullPath, version, versionStre
             continue
         }
         const fileContent = fs.readFileSync(filePath, 'utf8')
-        const match = resolveMatch(file.match, version, versionStream)
+        const match = file.type === 'tba_replace'
+            ? resolveTbaMatch(file.match, version)
+            : resolveMatch(file.match, version, versionStream)
         if (fileContent.indexOf(match) === -1) {
             logError(`  - ERROR: does not contain required match: ${match}`, false)
-            if (file.type === 'version_verify' || file.type === 'versionstream_verify') {
+            if (file.type === 'version_verify' || file.type === 'versionstream_verify' || file.type === 'tba_replace') {
                 logWarning('  - This file requires manual update, please update it to match the desired version.')
             }
             hasErrors = true
@@ -300,6 +321,13 @@ function verifyReleasePrepared(definition, projectFullPath, version, versionStre
 
 function resolveMatch(match, version, versionStream) {
     return match.replace("%VERSION%", version).replace("%VERSION_STREAM%", versionStream)
+}
+
+function resolveTbaMatch(match, version) {
+    if (!/tba/i.test(match)) {
+        logError(`ERROR: Invalid tba_replace match: ${match}. The match must contain TBA or tba.`)
+    }
+    return match.replace(/tba/i, version)
 }
 
 function isSnapshotOrRC(version) {
