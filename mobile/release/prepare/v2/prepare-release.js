@@ -1,41 +1,25 @@
-
 /**
  * prepare-release.js
- * 
- * This script prepares a new release of the sdk based on the definition file.
- * It supports both stable versions (e.g., 1.2.3) and pre-release versions (e.g., 2.0.0-SNAPSHOT or 2.0.0-RC1).
- * It can also run in "verify" mode, which means it will read the version from the library definition file
- * and check if the release is prepared.
- * 
- * Verify mode can be triggered by not providing the version number - in that case the version from the library definition file is used.
- * Or you can specify the --verify option to run the script in verify mode.
- * 
- * --------------------------------------------------------------
- * 
+ *
+ * Prepares or verifies a mobile SDK release using `.prepare-release.json`.
+ *
  * Usage:
- *   node scripts/prepare-release.js -p <path> -v <version>
- *  -p <path>            Path to the project root (required).
- *  -v <version>         Set the desired version number (e.g., 1.4.2, 2.0.0-SNAPSHOT or 2.0.0-RC1) to prepare
- *                       If the version is not set, it will be read from the definition file and run in "verify" mode.
- *  -h, --help           Show this help message.
- *  --ignore-git-clean   Ignore the git clean state check.
- *  --enforce-git-clean  Exit when the git repository is not clean.
- *  --verify             Run the script in verify mode.
- * 
- * --------------------------------------------------------------
- * 
- * When the git repository is not clean, the script prompts before continuing.
- * Use --enforce-git-clean to exit instead, or --ignore-git-clean to skip the check.
- * 
- * This script does not commit or push any changes to the repository nor create any tags.
- * 
- * This script expects a definition file `.prepare-release.json` in the project root.
- * You can visit the example definition file in the mtoken-sdk-flutter repository to see what it should look like.
- * https://github.com/wultra/mtoken-sdk-flutter/
- * 
- * --------------------------------------------------------------
- * 
- * Example definition file:
+ *   node prepare-release.js -p <path> [-v <version>] [options]
+ *
+ * Options:
+ *   -p <path>            Project root containing `.prepare-release.json`.
+ *   -v <version>         Version to prepare, for example 1.4.2, 2.0.0-SNAPSHOT, or 1.2.3-beta.1.
+ *                        Without this option, the current version is read and only verified.
+ *   --verify             Verify without preparing files.
+ *   --ignore-git-clean   Skip the initial and final Git cleanliness checks.
+ *   --enforce-git-clean  Fail instead of asking when the repository is initially dirty.
+ *   -h, --help           Show help.
+ *
+ * When an explicit version changes files, the script can commit all uncommitted changes,
+ * only files changed during this run, or nothing. A successful commit can then be pushed.
+ * Git uses the user's existing identity and credentials.
+ *
+ * Example `.prepare-release.json` definition:
  * {
  *   "library": {
  *     "type": "flutter" // or: "ios-oss", "android-oss", "npm", "yarn"
@@ -43,7 +27,7 @@
  *   "files": [
  *     {
  *       "path": "pubspec.yaml",
- *       "type": "version_replace", // replace the version in the pubspec.yaml file
+ *       "type": "version_replace", // replace the version in the file
  *       "match": "version: %VERSION%"
  *     },
  *     {
@@ -53,438 +37,826 @@
  *     },
  *     {
  *       "path": "CHANGELOG.md",
- *       "type": "version_verify", // verify that the CHANGELOG.md file contains the version
+ *       "type": "version_verify", // verify that the file contains the version
  *       "match": "## %VERSION%",
- *       "skipForSnapshot": true // optional: skip this file when preparing/verifying a SNAPSHOT or RC version
+ *       "skipForSnapshot": true // optionally skip versions ending with -SNAPSHOT
  *     },
  *     {
  *       "paths": ["docs/Readme.md", "README.md"],
- *       "type": "versionstream_verify", // verify that both files contain the version stream (e.g. 1.2.x)
- *       "match": "| `%VERSION_STREAM%`"
+ *       "type": "versionstream_verify", // verify the version stream, for example 1.2.x
+ *       "match": "| \`%VERSION_STREAM%\`"
  *     },
  *     {
  *       "path": "CHANGELOG.md",
- *       "type": "verify_not_containing", // verify that the CHANGELOG.md file does not contain the phrase
+ *       "type": "verify_not_containing", // verify that the file does not contain the match
  *       "match": "TBA"
- *     },
- *  ],
- *  "scripts": [
- *    {
- *      "type": "bash", // only bash scripts are supported for now
- *      "description": "Update the version in all relevant files",
- *      "script": "cd example/ios && pod install && cd ../.."
- *    }
- *  ]
+ *     }
+ *   ],
+ *   "scripts": [
+ *     {
+ *       "type": "bash",
+ *       "description": "Update generated files",
+ *       "script": "cd example/ios && pod install && cd ../.."
+ *     }
+ *   ]
+ * }
  */
 
 const fs = require('fs')
 const path = require('path')
-const { execSync } = require('child_process')
+const crypto = require('crypto')
+const { execFileSync, execSync } = require('child_process')
 
-let projectRoot = null
-let givenVersion = null
-let gitCleanMode = 'prompt'
-let gitWasCleanAtStart = null
-let forceVerifyMode = false
+// Versions may have an arbitrary safe suffix; only the exact -SNAPSHOT suffix has snapshot semantics.
+const VERSION_PATTERN = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z][0-9A-Za-z._-]*)?$/
+const VERSION_REPLACE_PATTERN =
+    '(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)' +
+    '(?:-[0-9A-Za-z][0-9A-Za-z._-]*)?'
 
-// Parse command line arguments
-for (i = 0; i < process.argv.length; i++) {
-    if (process.argv[i] === '--help' || process.argv[i] === '-h') {   
-        helpAndExit(0)
-    } else if (process.argv[i] === '-p') {
-        // Next argument should be the project path
-        projectRoot = process.argv[i + 1]
-    } else if (process.argv[i] === '-v') {
-        // Next argument should be the desired version
-        givenVersion = process.argv[i + 1]
-    } else if (process.argv[i] === '--ignore-git-clean') {
-        // Ignore the git clean state check
-        gitCleanMode = 'ignore'
-    } else if (process.argv[i] === '--enforce-git-clean') {
-        // Exit if the git repository is not clean
-        gitCleanMode = 'enforce'
-    } else if (process.argv[i] === '--verify') {
-        // Force the script to run in verify mode
-        forceVerifyMode = true
+class ReportedError extends Error {
+    constructor(message) {
+        super(message)
+        this.name = 'ReportedError'
     }
 }
 
-// Check if project path is provided or exit
-if (projectRoot === null) {
-    console.error('ERROR: You must specify the project path using -p option.')
-    helpAndExit()
-}
-
-// Check if the script is run in a clean git state
-if (gitCleanMode !== 'ignore') {
-    gitWasCleanAtStart = isGitClean(projectRoot)
-    if (!gitWasCleanAtStart) {
-        if (gitCleanMode === 'enforce') {
-            logError('ERROR: The git repository is not clean. Please commit or stash your changes before running this script.')
-        }
-        if (!confirmDirtyGitContinuation()) {
-            logError('ERROR: The git repository is not clean. Release preparation cancelled.')
+/**
+ * Handles all terminal input and formatted output in one place.
+ */
+class Terminal {
+    constructor() {
+        this.colors = {
+            red: '\x1b[31m',
+            green: '\x1b[32m',
+            yellow: '\x1b[33m',
+            blue: '\x1b[34m',
+            magenta: '\x1b[35m',
+            bold: '\x1b[1m',
         }
     }
-}
 
-// Call the main function with the parsed arguments
-main(projectRoot, givenVersion, forceVerifyMode)
+    readInput(question) {
+        process.stdout.write(question)
+        let answer = ''
+        const buffer = Buffer.alloc(1)
+        let terminal
 
-// MAIN FUNCTION
-
-function main(projectPath, desiredVersion, verifyMode) {
-
-    // If the desired version is not provided, we will run in "verify" mode
-    verifyMode = verifyMode || desiredVersion == null
-    // full path to the project root
-    const fullPath = path.resolve(projectPath)
-    // we expect the definition file to be in the project root
-    const definitionFilePath = path.join(fullPath, '.prepare-release.json')
-
-    logHeader('Preparing release script started')
-    logInfo(` - Using project path: ${fullPath}`)
-    logInfo(` - Reading definition file: ${definitionFilePath}`)
-
-    // read and parse the definition file
-    const definition = JSON.parse(fs.readFileSync(definitionFilePath, 'utf8'))
-
-    // Make sure the definition files contain some files to prepare
-    if (definition.files == null || definition.files.length === 0) {
-        logError('ERROR: The definition file does not contain any files to prepare.')
-    }
-
-    // If the version was not specified, read it from the definition file
-    // according to the library type
-    if (desiredVersion == null) {
-
-        logHeader('No version specified, retrieving from definition file')
-        let versionFile = null
-        let matchRegex = null
-
-        switch (definition.library.type) {
-            case 'flutter':
-                versionFile = 'pubspec.yaml'
-                matchRegex = /^\s*version\s*:\s*([^\s#]+)/m
-                break
-            case 'npm':
-                versionFile = 'package.json'
-                matchRegex = /^\s*"version"\s*:\s*"([^\s#]+)"/m
-                break
-            case 'yarn':
-                versionFile = 'package.json'
-                matchRegex = /^\s*"version"\s*:\s*"([^\s#]+)"/m
-                break
-            case 'ios-oss':
-                versionFile = definition.library.podspec
-                matchRegex = /s\.version\s*=\s*'([^']+)'/m
-                break
-            case 'android-oss':
-                versionFile = definition.library.versionFile || 'library/gradle.properties' 
-                matchRegex = /^VERSION_NAME=([\d.]+(?:-[A-Za-z0-9._]+)?)$/m
-                break
-            default:
-                logError(`ERROR: Unsupported library type: ${definition.library.type}.`)
-        }
-        logInfo(` - ${definition.library.type} library detected, reading version from ${versionFile}...`)
         try {
-            const fileContents = fs.readFileSync(path.join(projectPath, versionFile), 'utf8')
-
-            // Match "version: x.y.z+build" allowing for spaces
-            const match = fileContents.match(matchRegex)
-
-            if (match) {
-                desiredVersion = match[1]
-                logInfo(` - Parsed version: ${desiredVersion}`)
-            } else {
-                logError(` - No version found in ${versionFile}. Please ensure the file contains a valid version definition.`)
-            }
-        } catch (err) {
-            logError(` - Error reading ${versionFile}: ${err.message}`)
-        }
-    }
-
-    // verify that the version is in the correct format (major.minor.patch, major.minor.patch-SNAPSHOT or major.minor.patch-RCx)
-    if (/^\d+\.\d+\.\d+(-SNAPSHOT|-RC[1-9]\d*)?$/.test(desiredVersion) === false) {
-        logError(`ERROR: Invalid release version format: ${desiredVersion}. Expected format is "major.minor.patch" (e.g. "1.2.3"), "major.minor.patch-SNAPSHOT" (e.g. "2.0.0-SNAPSHOT") or "major.minor.patch-RCx" (e.g. "2.0.0-RC1").`)
-    }
-
-    // Create a masked version stream (e.g., 1.2.x from 1.2.3) for version verification
-    const versionStream = maskPatch(desiredVersion)
-
-    // If the script is not in the verify mode, modify the files according to the definition
-    if (!verifyMode) {
-        logHeader(`Preparing release for version: ${desiredVersion} (stream: ${versionStream})\n`)
-        prepareRelease(definition, fullPath, desiredVersion, versionStream)
-    }
-
-    logHeader('Verifying that all required files are present and contain the expected content')
-    verifyReleasePrepared(definition, fullPath, desiredVersion, versionStream)
-
-    if (definition.scripts && definition.scripts.length > 0) {
-        let hasErrors = false
-        logHeader('Run scripts from the definition file')
-        for (const script of definition.scripts) {
-            switch (script.type) {
-                case 'bash':
-                    logInfo(` - Running bash script: ${script.script}`)
-                    try {
-                        execSync(`cd ${fullPath} && ${script.script}`)
-                    } catch (error) {
-                        logError(`  - ERROR: Script failed with error: ${error.message}`, false)
-                    }
+            terminal = fs.openSync('/dev/tty', 'r')
+            while (true) {
+                const bytesRead = fs.readSync(terminal, buffer, 0, 1, null)
+                if (bytesRead === 0 || buffer[0] === 10 || buffer[0] === 13) {
                     break
-                default:
-                    logError(`  - ERROR: Unsupported script type: ${script.type}`, true)
+                }
+                answer += buffer.toString()
+            }
+        } catch (error) {
+            this.fail(`ERROR: Unable to read input from the terminal: ${error.message}`)
+        } finally {
+            if (terminal != null) {
+                fs.closeSync(terminal)
             }
         }
-        if (hasErrors) {
-            logError(' - Some scripts failed to execute. Please check the errors above.')
-        } else {
-            logSuccess(' - All scripts executed successfully.')
-        }
+
+        return answer.trim()
     }
 
-    // If we're in a "verify mode" and the git is not clean, it's an error
-    if (verifyMode && gitCleanMode !== 'ignore' && gitWasCleanAtStart && !isGitClean(projectRoot)) {
-        logError('ERROR: The git repository is not clean. Files were created during the verification - that is an error.')
+    confirm(question) {
+        return this.readInput(question).toLowerCase() === 'y'
     }
-}
 
-// HELPER FUNCTIONS
-
-function prepareRelease(definition, projectFullPath, version, versionStream) {
-    let hasErrors = false
-    for (const file of expandDefinitionFiles(definition.files)) {
-        if (file.skipForSnapshot && isSnapshotOrRC(version)) {
-            logInfo(` - Skipping file (SNAPSHOT/RC): ${file.path}`)
-            continue
-        }
-        logInfo(` - Preparing file: ${file.path}`)
-        const filePath = path.join(projectFullPath, file.path)
-        if (!fs.existsSync(filePath)) {
-            logError(`  - ERROR: The file does not exist!`, false)
-            hasErrors = true
-            continue
-        }
-        if (file.type === 'version_replace') {
-            const semverPattern = "(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?"
-            const template = file.match.replace("%VERSION%", semverPattern)
-            const finalRegex = new RegExp(template, "g")
-            const fileContent = fs.readFileSync(filePath, 'utf8')
-            const newContent = fileContent.replace(finalRegex, resolveMatch(file.match, version, versionStream))
-            fs.writeFileSync(filePath, newContent, 'utf8')
-            logSuccess(`  - File updated successfully!`)
-
-        } else if (file.type === 'tba_replace') {
-            const expectedMatch = resolveTbaMatch(file.match, version)
-            const tbaMatch = file.match.replace(/tba/i, '(?:TBA|tba)')
-            const tbaRegex = new RegExp(tbaMatch, 'g')
-            const fileContent = fs.readFileSync(filePath, 'utf8')
-
-            if (tbaRegex.test(fileContent)) {
-                const newContent = fileContent.replace(tbaRegex, expectedMatch)
-                fs.writeFileSync(filePath, newContent, 'utf8')
-                logSuccess(`  - File updated successfully!`)
-            } else {
-                logInfo(`  - TBA not found, verifying that the version is already present`)
-            }
-
-        } else if (file.type === 'version_verify' || file.type === 'versionstream_verify' || file.type === 'verify_not_containing') {
-            logInfo(`  - This file needs to be updated manually`)
-        } else {
-            logError(`  - ERROR: Unsupported file type: ${file.type}`, false)
-            hasErrors = true
-        }
-    }
-    if (hasErrors) {
-        logError(' - Release is not prepared. See the errors above.')
-    }
-}
-
-function verifyReleasePrepared(definition, projectFullPath, version, versionStream) {
-    let hasErrors = false
-    for (const file of expandDefinitionFiles(definition.files)) {
-        if (file.skipForSnapshot && isSnapshotOrRC(version)) {
-            logInfo(` - Skipping verification (SNAPSHOT/RC): ${file.path}`)
-            continue
-        }
-        logInfo(` - Verifying required file: ${file.path}`)
-        const filePath = path.join(projectFullPath, file.path)
-        if (!fs.existsSync(filePath)) {
-            logError(`  - ERROR: The file does not exist!`, false)
-            hasErrors = true
-            continue
-        }
-        const fileContent = fs.readFileSync(filePath, 'utf8')
-        const match = file.type === 'tba_replace'
-            ? resolveTbaMatch(file.match, version)
-            : resolveMatch(file.match, version, versionStream)
-        if (file.type === 'verify_not_containing') {
-            if (fileContent.indexOf(match) !== -1) {
-                logError(`  - ERROR: contains forbidden match: ${match}`, false)
-                logWarning('  - This file requires manual update, please remove the forbidden content.')
-                hasErrors = true
-                continue
-            }
-            logSuccess(`  - OK: does not contain: \"${match}\"`)
-            continue
-        }
-        if (fileContent.indexOf(match) === -1) {
-            logError(`  - ERROR: does not contain required match: ${match}`, false)
-            if (file.type === 'version_verify' || file.type === 'versionstream_verify' || file.type === 'tba_replace') {
-                logWarning('  - This file requires manual update, please update it to match the desired version.')
-            }
-            hasErrors = true
-            continue
-        }
-        logSuccess(`  - OK: contains: \"${match}\"`)
-    }
-    logHeader('Release preparation verification completed:')
-    if (hasErrors) {
-        logError(' - Release is not prepared, some required files are missing or do not contain the required content.')
-    } else {
-        logSuccess(' - Release is prepared successfully! All required files are present and contain the expected content.')
-    }
-}
-
-function resolveMatch(match, version, versionStream) {
-    return match.replace("%VERSION%", version).replace("%VERSION_STREAM%", versionStream)
-}
-
-function resolveTbaMatch(match, version) {
-    if (!/tba/i.test(match)) {
-        logError(`ERROR: Invalid tba_replace match: ${match}. The match must contain TBA or tba.`)
-    }
-    return match.replace(/tba/i, version)
-}
-
-function getFilePaths(file) {
-    if (file.path != null && file.paths != null) {
-        logError('ERROR: A file definition must specify either path or paths, not both.')
-    }
-    const filePaths = file.paths != null ? file.paths : [file.path]
-    if (!Array.isArray(filePaths) || filePaths.length === 0 || filePaths.some(filePath => typeof filePath !== 'string' || filePath.length === 0)) {
-        logError('ERROR: A file definition must specify a non-empty path or paths array.')
-    }
-    return filePaths
-}
-
-function expandDefinitionFiles(files) {
-    return files.flatMap(file => getFilePaths(file).map(filePath => ({ ...file, path: filePath })))
-}
-
-function confirmDirtyGitContinuation() {
-    process.stdout.write('The git repository is not clean. Continue anyway? (y/n): ')
-    let answer = ''
-    const buffer = Buffer.alloc(1)
-    let terminal
-
-    try {
-        terminal = fs.openSync('/dev/tty', 'r')
+    selectCommitOption() {
         while (true) {
-            const bytesRead = fs.readSync(terminal, buffer, 0, 1, null)
-            if (bytesRead === 0 || buffer[0] === 10 || buffer[0] === 13) {
-                break
+            this.info('\nCommit prepared release:')
+            this.info('  1. Commit all uncommitted changes')
+            this.info('  2. Commit only changes made by this script')
+            this.info('  3. Do not commit')
+            const answer = this.readInput('Select an option: ')
+            if (['1', '2', '3'].includes(answer)) {
+                return answer
             }
-            answer += buffer.toString()
-        }
-    } catch (error) {
-        logError(`ERROR: Unable to read confirmation from the terminal: ${error.message}`)
-    } finally {
-        if (terminal != null) {
-            fs.closeSync(terminal)
+            this.warning('Invalid option. Enter 1, 2, or 3.')
         }
     }
 
-    return answer.trim().toLowerCase() === 'y'
-}
+    color(text, color) {
+        return `${this.colors[color] || ''}${text}\x1b[0m`
+    }
 
-function isSnapshotOrRC(version) {
-  // Matches pre-release versions: -SNAPSHOT or -RCx (x is 1..N)
-  return /(-SNAPSHOT|-RC[1-9]\d*)$/.test(version)
-}
+    log(text, color) {
+        console.log(this.color(text, color))
+    }
 
-function maskPatch(version) {
-  // Match X.Y.Z, X.Y.Z-SNAPSHOT or X.Y.Z-RCx where X,Y,Z are numbers
-  const match = version.match(/^(\d+)\.(\d+)\.(\d+)(-SNAPSHOT|-RC[1-9]\d*)?$/)
-  if (!match) {
-    throw new Error(`Invalid version format: ${version}`)
-  }
-  const [, major, minor] = match
-  return `${major}.${minor}.x`
-}
+    info(message) {
+        console.log(message)
+    }
 
-function isGitClean() {
-  try {
-    const output = execSync(`cd ${projectRoot} && git status --porcelain`, { encoding: 'utf8' })
-    return output.trim().length === 0
-  } catch (err) {
-    console.error('Error checking git status:', err.message)
-    return false
-  }
-}
+    success(message) {
+        this.log(message, 'green')
+    }
 
-function helpAndExit() {
-    console.log(`
+    warning(message) {
+        this.log(message, 'yellow')
+    }
+
+    error(message) {
+        this.log(message, 'red')
+    }
+
+    header(message) {
+        this.log(`\n${this.color(this.color(message, 'bold'), 'magenta')}`)
+    }
+
+    fail(message) {
+        this.error(message)
+        throw new ReportedError(message)
+    }
+
+    printHelp() {
+        console.log(`
 ------ prepare-release.js HELP ------
 
-This script prepares a new release of the sdk based on the definition file.
-
-If a version is not provided, the script will run in "verify" mode, which means it will read the version from the definition file and check if the release is prepared.
+This script prepares a new SDK release based on a .prepare-release.json definition file.
 
 Options:
-  -v                        Set the desired version number (e.g., 1.4.2, 2.0.0-SNAPSHOT or 2.0.0-RC1).
-                            If the version is not set, it will be read from the definition file, 
-                            and the script will turn into a "verify" mode.
-  -p <path>                 Path to the project root (required).
-  -h, --help                Show this help message.
-  --ignore-git-clean        Ignore the git clean state check.
-  --enforce-git-clean       Exit when the git repository is not clean.
+  -v <version>                Set the desired version, for example 1.4.2,
+                              2.0.0-SNAPSHOT, or 1.2.3-beta.1.
+                              Without a version, the script runs in verify mode.
+  -p <path>                   Path to the project root (required).
+  -h, --help                  Show this help message.
+  --ignore-git-clean          Ignore the Git clean state check.
+  --enforce-git-clean         Exit when the Git repository is not clean.
+  --verify                    Run in verify mode.
+
+When -v is provided and files change, the script offers to commit all uncommitted
+changes, only files changed during this run, or nothing. Committed changes use
+"Prepared release <version>", after which the script offers to push.
 
 Example usage: prepare-release -p /path/to/project -v 1.4.2
                prepare-release -p /path/to/project -v 2.0.0-SNAPSHOT
-               prepare-release -p /path/to/project -v 2.0.0-RC1
+               prepare-release -p /path/to/project -v 1.2.3-beta.1
 ------------------------------------
 `)
-    process.exit(1)
-}
-
-function color(text, color) {
-    const colors = {
-        red: '\x1b[31m',
-        green: '\x1b[32m',
-        yellow: '\x1b[33m',
-        blue: '\x1b[34m',
-        magenta: '\x1b[35m',
-        bold: '\x1b[1m',
-    }
-    return `${colors[color] || ''}${text}\x1b[0m`
-}
-
-function log(text, clr) {
-    console.log(color(text, clr))
-}
-
-function logError(message, exit = true) {
-    log(message, 'red')
-    if (exit) {
-        process.exit(1)
     }
 }
 
-function logSuccess(message) {
-    log(message, 'green')
+/**
+ * Parses command-line arguments without leaking option state into globals.
+ */
+class CliOptions {
+    constructor(projectRoot, version, gitCleanMode, verifyMode, showHelp) {
+        this.projectRoot = projectRoot
+        this.version = version
+        this.gitCleanMode = gitCleanMode
+        this.verifyMode = verifyMode
+        this.showHelp = showHelp
+    }
+
+    static parse(argv, terminal) {
+        let projectRoot = null
+        let version = null
+        let gitCleanMode = 'prompt'
+        let verifyMode = false
+        let showHelp = false
+
+        for (let index = 2; index < argv.length; index++) {
+            const argument = argv[index]
+            if (argument === '--help' || argument === '-h') {
+                showHelp = true
+            } else if (argument === '-p') {
+                projectRoot = CliOptions.readValue(argv, ++index, '-p', terminal)
+            } else if (argument === '-v') {
+                version = CliOptions.readValue(argv, ++index, '-v', terminal)
+            } else if (argument === '--ignore-git-clean') {
+                gitCleanMode = 'ignore'
+            } else if (argument === '--enforce-git-clean') {
+                gitCleanMode = 'enforce'
+            } else if (argument === '--verify') {
+                verifyMode = true
+            }
+        }
+
+        return new CliOptions(projectRoot, version, gitCleanMode, verifyMode, showHelp)
+    }
+
+    static readValue(argv, index, option, terminal) {
+        const value = argv[index]
+        if (value == null || value.startsWith('-')) {
+            terminal.fail(`ERROR: Option ${option} requires a value.`)
+        }
+        return value
+    }
 }
 
-function logInfo(message) {
-    console.log(message)
+/**
+ * Encapsulates version validation, snapshot classification, and derived release values.
+ */
+class ReleaseVersion {
+    constructor(value, terminal) {
+        if (!VERSION_PATTERN.test(value)) {
+            terminal.fail(
+                `ERROR: Invalid release version format: ${value}. Expected "major.minor.patch", ` +
+                '"major.minor.patch-SNAPSHOT", or "major.minor.patch-suffix".'
+            )
+        }
+        this.value = value
+    }
+
+    get stream() {
+        const [, major, minor] = this.value.match(/^(\d+)\.(\d+)\./)
+        return `${major}.${minor}.x`
+    }
+
+    get isSnapshot() {
+        return /^\d+\.\d+\.\d+-SNAPSHOT$/.test(this.value)
+    }
 }
 
-function logHeader(message) {
-    log(`\n${color(color(message, 'bold'), 'magenta')}`)
+/**
+ * Loads and normalizes the release definition.
+ */
+class ReleaseDefinition {
+    constructor(contents, terminal) {
+        this.library = contents.library
+        this.files = contents.files
+        this.scripts = contents.scripts || []
+        this.terminal = terminal
+
+        if (!Array.isArray(this.files) || this.files.length === 0) {
+            terminal.fail('ERROR: The definition file does not contain any files to prepare.')
+        }
+    }
+
+    static load(projectRoot, terminal) {
+        const definitionPath = path.join(projectRoot, '.prepare-release.json')
+        terminal.info(` - Reading definition file: ${definitionPath}`)
+
+        try {
+            return new ReleaseDefinition(JSON.parse(fs.readFileSync(definitionPath, 'utf8')), terminal)
+        } catch (error) {
+            if (error instanceof ReportedError) {
+                throw error
+            }
+            terminal.fail(`ERROR: Unable to read the definition file: ${error.message}`)
+        }
+    }
+
+    expandedFiles() {
+        return this.files.flatMap(file => this.filePaths(file).map(filePath => ({
+            ...file,
+            path: filePath
+        })))
+    }
+
+    filePaths(file) {
+        if (file.path != null && file.paths != null) {
+            this.terminal.fail('ERROR: A file definition must specify either path or paths, not both.')
+        }
+
+        const filePaths = file.paths != null ? file.paths : [file.path]
+        if (
+            !Array.isArray(filePaths) ||
+            filePaths.length === 0 ||
+            filePaths.some(filePath => typeof filePath !== 'string' || filePath.length === 0)
+        ) {
+            this.terminal.fail('ERROR: A file definition must specify a non-empty path or paths array.')
+        }
+        return filePaths
+    }
 }
 
-function logWarning(message) {
-    log(message, 'yellow')
+/**
+ * Resolves the current version from the library-specific source file.
+ */
+class VersionResolver {
+    constructor(projectRoot, terminal) {
+        this.projectRoot = projectRoot
+        this.terminal = terminal
+    }
+
+    resolve(definition) {
+        this.terminal.header('No version specified, retrieving from definition file')
+        const source = this.sourceFor(definition.library)
+        this.terminal.info(
+            ` - ${definition.library.type} library detected, reading version from ${source.filePath}...`
+        )
+
+        try {
+            const contents = fs.readFileSync(path.join(this.projectRoot, source.filePath), 'utf8')
+            const match = contents.match(source.pattern)
+            if (!match) {
+                this.terminal.fail(
+                    ` - No version found in ${source.filePath}. ` +
+                    'Please ensure the file contains a valid version definition.'
+                )
+            }
+            this.terminal.info(` - Parsed version: ${match[1]}`)
+            return match[1]
+        } catch (error) {
+            if (error instanceof ReportedError) {
+                throw error
+            }
+            this.terminal.fail(` - Error reading ${source.filePath}: ${error.message}`)
+        }
+    }
+
+    sourceFor(library) {
+        switch (library.type) {
+            case 'flutter':
+                return { filePath: 'pubspec.yaml', pattern: /^\s*version\s*:\s*([^\s#]+)/m }
+            case 'npm':
+            case 'yarn':
+                return { filePath: 'package.json', pattern: /^\s*"version"\s*:\s*"([^\s#]+)"/m }
+            case 'ios-oss':
+                return { filePath: library.podspec, pattern: /s\.version\s*=\s*'([^']+)'/m }
+            case 'android-oss':
+                return {
+                    filePath: library.versionFile || 'library/gradle.properties',
+                    pattern: /^VERSION_NAME=([\d.]+(?:-[A-Za-z0-9._-]+)?)$/m
+                }
+            default:
+                this.terminal.fail(`ERROR: Unsupported library type: ${library.type}.`)
+        }
+    }
+}
+
+/**
+ * Base class for one normalized file entry from the release definition.
+ */
+class ReleaseFileOperation {
+    constructor(file, projectRoot, version, terminal) {
+        this.file = file
+        this.projectRoot = projectRoot
+        this.version = version
+        this.terminal = terminal
+    }
+
+    get filePath() {
+        return path.join(this.projectRoot, this.file.path)
+    }
+
+    get shouldSkip() {
+        return this.file.skipForSnapshot && this.version.isSnapshot
+    }
+
+    exists() {
+        return fs.existsSync(this.filePath)
+    }
+
+    prepare() {
+        this.terminal.info('  - This file needs to be updated manually')
+    }
+
+    verify() {
+        const match = this.expectedMatch()
+        const fileContents = fs.readFileSync(this.filePath, 'utf8')
+        if (!fileContents.includes(match)) {
+            this.terminal.error(`  - ERROR: does not contain required match: ${match}`)
+            if (this.requiresManualUpdate) {
+                this.terminal.warning(
+                    '  - This file requires manual update, please update it to match the desired version.'
+                )
+            }
+            return false
+        }
+        this.terminal.success(`  - OK: contains: "${match}"`)
+        return true
+    }
+
+    get requiresManualUpdate() {
+        return ['version_verify', 'versionstream_verify', 'tba_replace'].includes(this.file.type)
+    }
+
+    expectedMatch() {
+        return this.file.match
+            .replace('%VERSION%', this.version.value)
+            .replace('%VERSION_STREAM%', this.version.stream)
+    }
+}
+
+class VersionReplaceOperation extends ReleaseFileOperation {
+    prepare() {
+        const template = this.file.match.replace('%VERSION%', VERSION_REPLACE_PATTERN)
+        const finalRegex = new RegExp(template, 'g')
+        const fileContents = fs.readFileSync(this.filePath, 'utf8')
+        fs.writeFileSync(this.filePath, fileContents.replace(finalRegex, this.expectedMatch()), 'utf8')
+        this.terminal.success('  - File updated successfully!')
+    }
+}
+
+class TbaReplaceOperation extends ReleaseFileOperation {
+    prepare() {
+        const tbaRegex = new RegExp(this.file.match.replace(/tba/i, '(?:TBA|tba)'), 'g')
+        const fileContents = fs.readFileSync(this.filePath, 'utf8')
+
+        if (tbaRegex.test(fileContents)) {
+            fs.writeFileSync(this.filePath, fileContents.replace(tbaRegex, this.expectedMatch()), 'utf8')
+            this.terminal.success('  - File updated successfully!')
+        } else {
+            this.terminal.info('  - TBA not found, verifying that the version is already present')
+        }
+    }
+
+    expectedMatch() {
+        if (!/tba/i.test(this.file.match)) {
+            this.terminal.fail(
+                `ERROR: Invalid tba_replace match: ${this.file.match}. The match must contain TBA or tba.`
+            )
+        }
+        return this.file.match.replace(/tba/i, this.version.value)
+    }
+}
+
+class VerifyNotContainingOperation extends ReleaseFileOperation {
+    verify() {
+        const match = this.expectedMatch()
+        const fileContents = fs.readFileSync(this.filePath, 'utf8')
+        if (fileContents.includes(match)) {
+            this.terminal.error(`  - ERROR: contains forbidden match: ${match}`)
+            this.terminal.warning('  - This file requires manual update, please remove the forbidden content.')
+            return false
+        }
+        this.terminal.success(`  - OK: does not contain: "${match}"`)
+        return true
+    }
+}
+
+class ManualVerificationOperation extends ReleaseFileOperation {}
+
+/**
+ * Creates the operation responsible for each supported definition type.
+ */
+class ReleaseFileOperationFactory {
+    constructor(projectRoot, version, terminal) {
+        this.projectRoot = projectRoot
+        this.version = version
+        this.terminal = terminal
+    }
+
+    create(file) {
+        const constructorArguments = [file, this.projectRoot, this.version, this.terminal]
+        switch (file.type) {
+            case 'version_replace':
+                return new VersionReplaceOperation(...constructorArguments)
+            case 'tba_replace':
+                return new TbaReplaceOperation(...constructorArguments)
+            case 'version_verify':
+            case 'versionstream_verify':
+                return new ManualVerificationOperation(...constructorArguments)
+            case 'verify_not_containing':
+                return new VerifyNotContainingOperation(...constructorArguments)
+            default:
+                this.terminal.fail(`  - ERROR: Unsupported file type: ${file.type}`)
+        }
+    }
+}
+
+/**
+ * Applies all automatic release-file changes.
+ */
+class ReleasePreparer {
+    constructor(operations, terminal) {
+        this.operations = operations
+        this.terminal = terminal
+    }
+
+    run() {
+        let hasErrors = false
+        for (const operation of this.operations) {
+            if (operation.shouldSkip) {
+                this.terminal.info(` - Skipping file (SNAPSHOT): ${operation.file.path}`)
+                continue
+            }
+
+            this.terminal.info(` - Preparing file: ${operation.file.path}`)
+            if (!operation.exists()) {
+                this.terminal.error('  - ERROR: The file does not exist!')
+                hasErrors = true
+                continue
+            }
+            operation.prepare()
+        }
+
+        if (hasErrors) {
+            this.terminal.fail(' - Release is not prepared. See the errors above.')
+        }
+    }
+}
+
+/**
+ * Verifies all release-file requirements after preparation.
+ */
+class ReleaseVerifier {
+    constructor(operations, terminal) {
+        this.operations = operations
+        this.terminal = terminal
+    }
+
+    run() {
+        let hasErrors = false
+        for (const operation of this.operations) {
+            if (operation.shouldSkip) {
+                this.terminal.info(` - Skipping verification (SNAPSHOT): ${operation.file.path}`)
+                continue
+            }
+
+            this.terminal.info(` - Verifying required file: ${operation.file.path}`)
+            if (!operation.exists()) {
+                this.terminal.error('  - ERROR: The file does not exist!')
+                hasErrors = true
+                continue
+            }
+            if (!operation.verify()) {
+                hasErrors = true
+            }
+        }
+
+        this.terminal.header('Release preparation verification completed:')
+        if (hasErrors) {
+            this.terminal.fail(
+                ' - Release is not prepared, some required files are missing or do not contain the required content.'
+            )
+        }
+        this.terminal.success(
+            ' - Release is prepared successfully! All required files are present and contain the expected content.'
+        )
+    }
+}
+
+/**
+ * Executes optional definition scripts after file verification.
+ */
+class DefinitionScriptRunner {
+    constructor(projectRoot, terminal) {
+        this.projectRoot = projectRoot
+        this.terminal = terminal
+    }
+
+    run(scripts) {
+        if (scripts.length === 0) {
+            return
+        }
+
+        let hasErrors = false
+        this.terminal.header('Run scripts from the definition file')
+        for (const script of scripts) {
+            if (script.type !== 'bash') {
+                this.terminal.fail(`  - ERROR: Unsupported script type: ${script.type}`)
+            }
+
+            this.terminal.info(` - Running bash script: ${script.script}`)
+            try {
+                execSync(script.script, { cwd: this.projectRoot })
+            } catch (error) {
+                this.terminal.error(`  - ERROR: Script failed with error: ${error.message}`)
+                hasErrors = true
+            }
+        }
+
+        if (hasErrors) {
+            this.terminal.fail(' - Some scripts failed to execute. Please check the errors above.')
+        }
+        this.terminal.success(' - All scripts executed successfully.')
+    }
+}
+
+/**
+ * Owns Git inspection and mutations while preserving the user's configuration.
+ */
+class GitRepository {
+    constructor(repositoryPath, terminal) {
+        this.repositoryPath = repositoryPath
+        this.terminal = terminal
+    }
+
+    isClean() {
+        try {
+            return this.git(['status', '--porcelain'], { encoding: 'utf8' }).trim().length === 0
+        } catch (error) {
+            this.terminal.fail(`ERROR: Unable to check Git status: ${error.message}`)
+        }
+    }
+
+    captureChanges() {
+        return new Map(this.changedFiles().map(filePath => [
+            filePath,
+            this.fileFingerprint(filePath)
+        ]))
+    }
+
+    filesChangedSince(initialChanges) {
+        return this.changedFiles().filter(filePath => {
+            if (!initialChanges.has(filePath)) {
+                return true
+            }
+            return initialChanges.get(filePath) !== this.fileFingerprint(filePath)
+        })
+    }
+
+    changedFiles() {
+        try {
+            const output = this.git(
+                ['status', '--porcelain=v1', '-z', '--untracked-files=all'],
+                { encoding: 'utf8' }
+            )
+            const entries = output.split('\0')
+            const filePaths = new Set()
+
+            for (let index = 0; index < entries.length; index++) {
+                const entry = entries[index]
+                if (entry.length < 4) {
+                    continue
+                }
+
+                const status = entry.slice(0, 2)
+                filePaths.add(entry.slice(3))
+
+                // NUL-delimited rename/copy records contain the original path as the next entry.
+                if (/[RC]/.test(status) && entries[index + 1]) {
+                    filePaths.add(entries[++index])
+                }
+            }
+            return [...filePaths]
+        } catch (error) {
+            this.terminal.fail(`ERROR: Unable to determine changed files: ${error.message}`)
+        }
+    }
+
+    fileFingerprint(filePath) {
+        const absolutePath = path.join(this.repositoryPath, filePath)
+        if (!fs.existsSync(absolutePath)) {
+            return null
+        }
+
+        const stats = fs.lstatSync(absolutePath)
+        if (stats.isSymbolicLink()) {
+            return `symlink:${fs.readlinkSync(absolutePath)}`
+        }
+        if (!stats.isFile()) {
+            return `${stats.mode}:${stats.size}:${stats.mtimeMs}`
+        }
+        return crypto.createHash('sha256').update(fs.readFileSync(absolutePath)).digest('hex')
+    }
+
+    commitAll(version) {
+        this.git(['add', '-A'], { stdio: 'inherit' })
+        this.git(['commit', '-m', `Prepared release ${version}`], { stdio: 'inherit' })
+    }
+
+    commitOnly(version, filePaths) {
+        this.git(['add', '-A', '--', ...filePaths], { stdio: 'inherit' })
+        this.git(
+            ['commit', '--only', '-m', `Prepared release ${version}`, '--', ...filePaths],
+            { stdio: 'inherit' }
+        )
+    }
+
+    push() {
+        this.git(['push'], { stdio: 'inherit' })
+    }
+
+    git(argumentsList, options = {}) {
+        return execFileSync('git', argumentsList, {
+            cwd: this.repositoryPath,
+            ...options
+        })
+    }
+}
+
+/**
+ * Offers the optional commit and push flow after a successful preparation.
+ */
+class ReleaseCommitWorkflow {
+    constructor(gitRepository, terminal) {
+        this.gitRepository = gitRepository
+        this.terminal = terminal
+    }
+
+    run(version, initialChanges) {
+        const changedFiles = this.gitRepository.filesChangedSince(initialChanges)
+        if (changedFiles.length === 0) {
+            return
+        }
+
+        const commitOption = this.terminal.selectCommitOption()
+        if (commitOption === '3') {
+            return
+        }
+
+        try {
+            if (commitOption === '1') {
+                this.gitRepository.commitAll(version)
+            } else {
+                this.gitRepository.commitOnly(version, changedFiles)
+            }
+        } catch (error) {
+            this.terminal.fail(`ERROR: Unable to commit prepared release: ${error.message}`)
+        }
+
+        if (!this.terminal.confirm('Push the changes? (y/n): ')) {
+            return
+        }
+
+        try {
+            this.gitRepository.push()
+        } catch (error) {
+            this.terminal.fail(`ERROR: Unable to push prepared release: ${error.message}`)
+        }
+    }
+}
+
+/**
+ * Coordinates the complete release preparation lifecycle.
+ */
+class PrepareReleaseApplication {
+    constructor(options, terminal) {
+        this.options = options
+        this.terminal = terminal
+    }
+
+    run() {
+        if (this.options.showHelp) {
+            this.terminal.printHelp()
+            return
+        }
+        if (this.options.projectRoot == null) {
+            this.terminal.error('ERROR: You must specify the project path using -p option.')
+            this.terminal.printHelp()
+            throw new ReportedError('Missing project path')
+        }
+
+        const projectRoot = path.resolve(this.options.projectRoot)
+        const gitRepository = new GitRepository(projectRoot, this.terminal)
+        const gitWasCleanAtStart = this.checkInitialGitState(gitRepository)
+        const initialChanges = this.options.version == null ? null : gitRepository.captureChanges()
+        const verifyMode = this.options.verifyMode || this.options.version == null
+
+        this.terminal.header('Preparing release script started')
+        this.terminal.info(` - Using project path: ${projectRoot}`)
+        const definition = ReleaseDefinition.load(projectRoot, this.terminal)
+        const versionValue = this.options.version == null
+            ? new VersionResolver(projectRoot, this.terminal).resolve(definition)
+            : this.options.version
+        const version = new ReleaseVersion(versionValue, this.terminal)
+        const factory = new ReleaseFileOperationFactory(projectRoot, version, this.terminal)
+        const operations = definition.expandedFiles().map(file => factory.create(file))
+
+        if (!verifyMode) {
+            this.terminal.header(`Preparing release for version: ${version.value} (stream: ${version.stream})\n`)
+            new ReleasePreparer(operations, this.terminal).run()
+        }
+
+        this.terminal.header('Verifying that all required files are present and contain the expected content')
+        new ReleaseVerifier(operations, this.terminal).run()
+        new DefinitionScriptRunner(projectRoot, this.terminal).run(definition.scripts)
+
+        if (
+            verifyMode &&
+            this.options.gitCleanMode !== 'ignore' &&
+            gitWasCleanAtStart &&
+            !gitRepository.isClean()
+        ) {
+            this.terminal.fail(
+                'ERROR: The git repository is not clean. Files were created during verification; that is an error.'
+            )
+        }
+
+        if (initialChanges != null) {
+            new ReleaseCommitWorkflow(gitRepository, this.terminal).run(version.value, initialChanges)
+        }
+    }
+
+    checkInitialGitState(gitRepository) {
+        if (this.options.gitCleanMode === 'ignore') {
+            return null
+        }
+
+        const isClean = gitRepository.isClean()
+        if (isClean) {
+            return true
+        }
+        if (this.options.gitCleanMode === 'enforce') {
+            this.terminal.fail(
+                'ERROR: The git repository is not clean. Please commit or stash your changes before running this script.'
+            )
+        }
+        if (!this.terminal.confirm('The git repository is not clean. Continue anyway? (y/n): ')) {
+            this.terminal.fail(
+                'ERROR: The git repository is not clean. Release preparation cancelled.'
+            )
+        }
+        return false
+    }
+}
+
+const terminal = new Terminal()
+
+try {
+    const options = CliOptions.parse(process.argv, terminal)
+    new PrepareReleaseApplication(options, terminal).run()
+} catch (error) {
+    if (!(error instanceof ReportedError)) {
+        terminal.error(`ERROR: ${error.message}`)
+    }
+    process.exitCode = 1
 }
