@@ -10,6 +10,7 @@
  *
  * Usage:
  *   curl -fsSL <dispatcher URL> | node - -p <project-path> [prepare-release options]
+ *   node prepare-release.js --dispatch-local -p <project-path> [prepare-release options]
  */
 
 const fs = require('fs')
@@ -28,19 +29,23 @@ class DispatcherError extends Error {}
  * Reads only the arguments needed before handing control to a versioned script.
  */
 class DispatcherOptions {
-    constructor(projectRoot, showHelp) {
+    constructor(projectRoot, showHelp, dispatchLocal) {
         this.projectRoot = projectRoot
         this.showHelp = showHelp
+        this.dispatchLocal = dispatchLocal
     }
 
     static parse(argv) {
         let projectRoot = null
         let showHelp = false
+        let dispatchLocal = false
 
         for (let index = 2; index < argv.length; index++) {
             const argument = argv[index]
             if (argument === '-h' || argument === '--help') {
                 showHelp = true
+            } else if (argument === '--dispatch-local') {
+                dispatchLocal = true
             } else if (argument === '-p') {
                 projectRoot = argv[++index]
                 if (projectRoot == null || projectRoot.startsWith('-')) {
@@ -49,7 +54,7 @@ class DispatcherOptions {
             }
         }
 
-        return new DispatcherOptions(projectRoot, showHelp)
+        return new DispatcherOptions(projectRoot, showHelp, dispatchLocal)
     }
 }
 
@@ -87,6 +92,10 @@ class ScriptVersionResolver {
 class ImplementationLocator {
     static urlFor(scriptVersion) {
         return `${RAW_REPOSITORY_URL}/v${scriptVersion}/prepare-release.js`
+    }
+
+    static localPathFor(scriptVersion) {
+        return path.join(__dirname, `v${scriptVersion}`, 'prepare-release.js')
     }
 }
 
@@ -136,6 +145,19 @@ class RemoteScriptLoader {
 }
 
 /**
+ * Loads a versioned implementation located next to the dispatcher.
+ */
+class LocalScriptLoader {
+    load(filePath) {
+        try {
+            return fs.readFileSync(filePath, 'utf8')
+        } catch (error) {
+            throw new DispatcherError(`Unable to read ${filePath}: ${error.message}`)
+        }
+    }
+}
+
+/**
  * Executes the downloaded implementation with the original command-line arguments.
  */
 class VersionedScriptRunner {
@@ -171,11 +193,24 @@ class PrepareReleaseDispatcher {
         }
 
         const scriptVersion = new ScriptVersionResolver(options.projectRoot).resolve()
-        const implementationUrl = ImplementationLocator.urlFor(scriptVersion)
         console.log(`Resolved prepare-release script version: ${scriptVersion}`)
-        console.log(`Using prepare-release implementation: ${implementationUrl}`)
-        const scriptContents = await new RemoteScriptLoader().load(implementationUrl)
-        new VersionedScriptRunner().run(scriptContents, this.argv.slice(2))
+        const scriptContents = await this.loadImplementation(scriptVersion, options.dispatchLocal)
+        const forwardedArguments = this.argv
+            .slice(2)
+            .filter(argument => argument !== '--dispatch-local')
+        new VersionedScriptRunner().run(scriptContents, forwardedArguments)
+    }
+
+    async loadImplementation(scriptVersion, dispatchLocal) {
+        if (dispatchLocal) {
+            const implementationPath = ImplementationLocator.localPathFor(scriptVersion)
+            console.log(`Using local prepare-release implementation: ${implementationPath}`)
+            return new LocalScriptLoader().load(implementationPath)
+        }
+
+        const implementationUrl = ImplementationLocator.urlFor(scriptVersion)
+        console.log(`Using remote prepare-release implementation: ${implementationUrl}`)
+        return new RemoteScriptLoader().load(implementationUrl)
     }
 
     printHelp() {
@@ -187,6 +222,10 @@ the matching prepare-release implementation. A missing scriptVersion defaults to
 
 Required dispatcher option:
   -p <path>    Path to the project root.
+
+Dispatcher options:
+  --dispatch-local    Load vN/prepare-release.js next to this dispatcher instead
+                      of downloading it from raw.githubusercontent.com.
 
 All other options are forwarded unchanged to the selected implementation.
 ------------------------------------------------

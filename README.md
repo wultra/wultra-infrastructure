@@ -35,6 +35,7 @@ The stable unversioned entrypoint reads `scriptVersion` from `.prepare-release.j
 ```json
 {
   "scriptVersion": 2,
+  "devVersion": "0.0.1-dev",
   "library": {
     "type": "flutter"
   },
@@ -42,7 +43,14 @@ The stable unversioned entrypoint reads `scriptVersion` from `.prepare-release.j
     {
       "path": "pubspec.yaml",
       "type": "version_replace",
-      "match": "version: %VERSION%"
+      "match": "version: %VERSION%",
+      "devChange": true
+    },
+    {
+      "path": "CHANGELOG.md",
+      "type": "verify_not_containing",
+      "match": "## TBA",
+      "devChangelog": true
     }
   ]
 }
@@ -54,6 +62,7 @@ The selected implementation prepares or verifies an SDK repository for a new rel
 
 - Runs in **prepare** mode when a version is supplied (`-v <version>`).
 - Runs in **verify** mode when no version is supplied or `--verify` is used – the version is read from the library's definition file and the repository is checked against it.
+- Version 2 runs in **prepare development** mode with `--prepare-dev`: it verifies the current release first, applies `devVersion` only to files marked `devChange`, restores `devChangelog` headings, and runs definition scripts.
 - Expects a `.prepare-release.json` definition file in the repository root. See the [mtoken-sdk-flutter](https://github.com/wultra/mtoken-sdk-flutter/) repository for a real-world example.
 
 **Arguments**
@@ -61,7 +70,9 @@ The selected implementation prepares or verifies an SDK repository for a new rel
 | Flag | Description |
 | --- | --- |
 | `-p <path>` | Path to the project root (required). |
+| `--dispatch-local` | Load the selected `vN/prepare-release.js` next to the dispatcher instead of downloading it. |
 | `-v <version>` | Target version (e.g. `1.4.2`). When omitted, the script runs in verify mode. |
+| `--prepare-dev` | Version 2: verify the current release, then prepare development files using `devVersion`. |
 | `--verify` | Force verify mode even when a version is provided. |
 | `--ignore-git-clean` | Skip the "clean git working tree" check. |
 | `-h`, `--help` | Print usage. |

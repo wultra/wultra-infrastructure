@@ -10,6 +10,7 @@
  *   -p <path>            Project root containing `.prepare-release.json`.
  *   -v <version>         Version to prepare, for example 1.4.2, 2.0.0-SNAPSHOT, or 1.2.3-beta.1.
  *                        Without this option, the current version is read and only verified.
+ *   --prepare-dev        Verify the current release, then prepare files for development.
  *   --verify             Verify without preparing files.
  *   --ignore-git-clean   Skip the initial and final Git cleanliness checks.
  *   --enforce-git-clean  Fail instead of asking when the repository is initially dirty.
@@ -22,6 +23,7 @@
  * Example `.prepare-release.json` definition:
  * {
  *   "scriptVersion": 2,
+ *   "devVersion": "0.0.1-dev",
  *   "library": {
  *     "type": "flutter" // or: "ios-oss", "android-oss", "npm", "yarn"
  *   },
@@ -29,7 +31,8 @@
  *     {
  *       "path": "pubspec.yaml",
  *       "type": "version_replace", // replace the version in the file
- *       "match": "version: %VERSION%"
+ *       "match": "version: %VERSION%",
+ *       "devChange": true // use devVersion when --prepare-dev is invoked
  *     },
  *     {
  *       "path": "CHANGELOG.md",
@@ -50,7 +53,8 @@
  *     {
  *       "path": "CHANGELOG.md",
  *       "type": "verify_not_containing", // verify that the file does not contain the match
- *       "match": "TBA"
+ *       "match": "## TBA",
+ *       "devChangelog": true // insert this heading above the first version for development
  *     }
  *   ],
  *   "scripts": [
@@ -188,6 +192,8 @@ Options:
   --ignore-git-clean          Ignore the Git clean state check.
   --enforce-git-clean         Exit when the Git repository is not clean.
   --verify                    Run in verify mode.
+  --prepare-dev               Verify the current release, then prepare development files
+                              using devVersion from .prepare-release.json.
 
 When -v is provided and files change, the script offers to commit all uncommitted
 changes, only files changed during this run, or nothing. Committed changes use
@@ -196,6 +202,7 @@ changes, only files changed during this run, or nothing. Committed changes use
 Example usage: prepare-release -p /path/to/project -v 1.4.2
                prepare-release -p /path/to/project -v 2.0.0-SNAPSHOT
                prepare-release -p /path/to/project -v 1.2.3-beta.1
+               prepare-release -p /path/to/project --prepare-dev
 ------------------------------------
 `)
     }
@@ -205,11 +212,12 @@ Example usage: prepare-release -p /path/to/project -v 1.4.2
  * Parses command-line arguments without leaking option state into globals.
  */
 class CliOptions {
-    constructor(projectRoot, version, gitCleanMode, verifyMode, showHelp) {
+    constructor(projectRoot, version, gitCleanMode, verifyMode, prepareDevMode, showHelp) {
         this.projectRoot = projectRoot
         this.version = version
         this.gitCleanMode = gitCleanMode
         this.verifyMode = verifyMode
+        this.prepareDevMode = prepareDevMode
         this.showHelp = showHelp
     }
 
@@ -218,6 +226,7 @@ class CliOptions {
         let version = null
         let gitCleanMode = 'prompt'
         let verifyMode = false
+        let prepareDevMode = false
         let showHelp = false
 
         for (let index = 2; index < argv.length; index++) {
@@ -234,10 +243,19 @@ class CliOptions {
                 gitCleanMode = 'enforce'
             } else if (argument === '--verify') {
                 verifyMode = true
+            } else if (argument === '--prepare-dev') {
+                prepareDevMode = true
             }
         }
 
-        return new CliOptions(projectRoot, version, gitCleanMode, verifyMode, showHelp)
+        return new CliOptions(
+            projectRoot,
+            version,
+            gitCleanMode,
+            verifyMode,
+            prepareDevMode,
+            showHelp
+        )
     }
 
     static readValue(argv, index, option, terminal) {
@@ -281,6 +299,7 @@ class ReleaseDefinition {
         this.library = contents.library
         this.files = contents.files
         this.scripts = contents.scripts || []
+        this.devVersion = contents.devVersion
         this.terminal = terminal
 
         if (!Array.isArray(this.files) || this.files.length === 0) {
@@ -335,8 +354,8 @@ class VersionResolver {
         this.terminal = terminal
     }
 
-    resolve(definition) {
-        this.terminal.header('No version specified, retrieving from definition file')
+    resolve(definition, header = 'No version specified, retrieving from definition file') {
+        this.terminal.header(header)
         const source = this.sourceFor(definition.library)
         this.terminal.info(
             ` - ${definition.library.type} library detected, reading version from ${source.filePath}...`
@@ -541,6 +560,76 @@ class ReleasePreparer {
         if (hasErrors) {
             this.terminal.fail(' - Release is not prepared. See the errors above.')
         }
+    }
+}
+
+/**
+ * Restores the development heading above the first released changelog version.
+ */
+class DevelopmentChangelogPreparer {
+    constructor(files, projectRoot, terminal) {
+        this.files = files
+        this.projectRoot = projectRoot
+        this.terminal = terminal
+    }
+
+    run() {
+        let hasErrors = false
+        for (const file of this.files) {
+            this.terminal.info(` - Preparing development changelog: ${file.path}`)
+            const filePath = path.join(this.projectRoot, file.path)
+            if (!fs.existsSync(filePath)) {
+                this.terminal.error('  - ERROR: The file does not exist!')
+                hasErrors = true
+                continue
+            }
+            if (typeof file.match !== 'string' || !/tba/i.test(file.match)) {
+                this.terminal.error(
+                    '  - ERROR: A changelog match must contain TBA, for example "## TBA".'
+                )
+                hasErrors = true
+                continue
+            }
+
+            const fileContents = fs.readFileSync(filePath, 'utf8')
+            if (fileContents.includes(file.match)) {
+                this.terminal.info('  - Development changelog heading is already present')
+                continue
+            }
+
+            const versionMatch = this.versionMatchFor(file.match).exec(fileContents)
+            if (!versionMatch) {
+                this.terminal.error(
+                    `  - ERROR: No released version matching "${file.match}" was found.`
+                )
+                hasErrors = true
+                continue
+            }
+
+            const newline = fileContents.includes('\r\n') ? '\r\n' : '\n'
+            const insertion = `${file.match}${newline}${newline}`
+            const newContents =
+                fileContents.slice(0, versionMatch.index) +
+                insertion +
+                fileContents.slice(versionMatch.index)
+            fs.writeFileSync(filePath, newContents, 'utf8')
+            this.terminal.success('  - Development changelog heading added successfully!')
+        }
+
+        if (hasErrors) {
+            this.terminal.fail(' - Development changelog preparation failed. See the errors above.')
+        }
+    }
+
+    versionMatchFor(match) {
+        const tbaMatch = /tba/i.exec(match)
+        const prefix = this.escapeRegex(match.slice(0, tbaMatch.index))
+        const suffix = this.escapeRegex(match.slice(tbaMatch.index + tbaMatch[0].length))
+        return new RegExp(`${prefix}${VERSION_REPLACE_PATTERN}${suffix}`)
+    }
+
+    escapeRegex(value) {
+        return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
     }
 }
 
@@ -785,16 +874,23 @@ class PrepareReleaseApplication {
             this.terminal.printHelp()
             throw new ReportedError('Missing project path')
         }
+        this.validateModes()
 
         const projectRoot = path.resolve(this.options.projectRoot)
         const gitRepository = new GitRepository(projectRoot, this.terminal)
         const gitWasCleanAtStart = this.checkInitialGitState(gitRepository)
         const initialChanges = this.options.version == null ? null : gitRepository.captureChanges()
-        const verifyMode = this.options.verifyMode || this.options.version == null
 
         this.terminal.header('Preparing release script started')
         this.terminal.info(` - Using project path: ${projectRoot}`)
         const definition = ReleaseDefinition.load(projectRoot, this.terminal)
+
+        if (this.options.prepareDevMode) {
+            this.prepareDevelopment(projectRoot, definition)
+            return
+        }
+
+        const verifyMode = this.options.verifyMode || this.options.version == null
         const versionValue = this.options.version == null
             ? new VersionResolver(projectRoot, this.terminal).resolve(definition)
             : this.options.version
@@ -825,6 +921,53 @@ class PrepareReleaseApplication {
         if (initialChanges != null) {
             new ReleaseCommitWorkflow(gitRepository, this.terminal).run(version.value, initialChanges)
         }
+    }
+
+    validateModes() {
+        if (this.options.prepareDevMode && this.options.version != null) {
+            this.terminal.fail('ERROR: --prepare-dev cannot be combined with -v.')
+        }
+        if (this.options.prepareDevMode && this.options.verifyMode) {
+            this.terminal.fail('ERROR: --prepare-dev cannot be combined with --verify.')
+        }
+    }
+
+    prepareDevelopment(projectRoot, definition) {
+        const expandedFiles = definition.expandedFiles()
+        const currentVersionValue = new VersionResolver(projectRoot, this.terminal).resolve(
+            definition,
+            'Resolving current version for prerequisite verification'
+        )
+        const currentVersion = new ReleaseVersion(currentVersionValue, this.terminal)
+        const currentFactory = new ReleaseFileOperationFactory(
+            projectRoot,
+            currentVersion,
+            this.terminal
+        )
+        const currentOperations = expandedFiles.map(file => currentFactory.create(file))
+
+        this.terminal.header('Verifying the current release before development preparation')
+        new ReleaseVerifier(currentOperations, this.terminal).run()
+
+        if (definition.devVersion == null) {
+            this.terminal.fail(
+                'ERROR: The definition file must specify devVersion when --prepare-dev is used.'
+            )
+        }
+
+        const devVersion = new ReleaseVersion(definition.devVersion, this.terminal)
+        const devFactory = new ReleaseFileOperationFactory(projectRoot, devVersion, this.terminal)
+        const devOperations = expandedFiles
+            .filter(file => file.devChange === true)
+            .map(file => devFactory.create(file))
+        const changelogFiles = expandedFiles.filter(file => file.devChangelog === true)
+
+        this.terminal.header(
+            `Preparing development files for version: ${devVersion.value} (stream: ${devVersion.stream})`
+        )
+        new ReleasePreparer(devOperations, this.terminal).run()
+        new DevelopmentChangelogPreparer(changelogFiles, projectRoot, this.terminal).run()
+        new DefinitionScriptRunner(projectRoot, this.terminal).run(definition.scripts)
     }
 
     checkInitialGitState(gitRepository) {
