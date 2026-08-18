@@ -1,7 +1,7 @@
 /**
  * prepare-release.js
  *
- * Prepares or verifies a mobile SDK release using `.prepare-release.json`.
+ * Version 2 prepares or verifies a mobile SDK release using `.prepare-release.json`.
  *
  * Usage:
  *   node prepare-release.js -p <path> [-v <version>] [options]
@@ -21,6 +21,7 @@
  *
  * Example `.prepare-release.json` definition:
  * {
+ *   "scriptVersion": 2,
  *   "library": {
  *     "type": "flutter" // or: "ios-oss", "android-oss", "npm", "yarn"
  *   },

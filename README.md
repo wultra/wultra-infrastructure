@@ -8,7 +8,7 @@ This branch hosts shared scripts and source-level utilities that support Wultra'
 ## Repository layout
 
 - All shared assets live under the [`mobile/`](./mobile) folder.
-- Each asset is versioned by its path segment (`v1`, `v2`, …). A new major version is introduced whenever a breaking change is made; older versions remain available so existing consumers keep working.
+- Assets are versioned by their path segment (`v1`, `v2`, …). The prepare-release script also provides an unversioned dispatcher that selects the implementation from `.prepare-release.json`.
 - Scripts and source files are fetched from the `mobile` branch via `raw.githubusercontent.com`, e.g.:
   ```
   https://raw.githubusercontent.com/wultra/wultra-infrastructure/refs/heads/mobile/mobile/<area>/<script>/<version>/<file>
@@ -28,13 +28,32 @@ A version (`v1`, `v2`, …) is **frozen** once published. Bug-fix and backwards-
 
 # Available scripts and utilities
 
-## Prepare release [v1]
+## Prepare release
 
-Prepares (or verifies) an SDK repository for a new release: bumps version numbers in the project files declared by the definition file, validates the git state, and reports any inconsistencies.
+The stable unversioned entrypoint reads `scriptVersion` from `.prepare-release.json`, downloads the matching implementation, and forwards all command-line arguments to it. A missing `scriptVersion` defaults to `1` for backwards compatibility.
+
+```json
+{
+  "scriptVersion": 2,
+  "library": {
+    "type": "flutter"
+  },
+  "files": [
+    {
+      "path": "pubspec.yaml",
+      "type": "version_replace",
+      "match": "version: %VERSION%"
+    }
+  ]
+}
+```
+
+Version 1 uses the original [`v1`](./mobile/release/prepare/v1/prepare-release.js) implementation. Version 2 and future implementations remain in their corresponding `v2/`, `v3/`, and later folders.
+
+The selected implementation prepares or verifies an SDK repository for a new release: it updates project files declared by the definition, validates the Git state, and reports inconsistencies.
 
 - Runs in **prepare** mode when a version is supplied (`-v <version>`).
 - Runs in **verify** mode when no version is supplied or `--verify` is used – the version is read from the library's definition file and the repository is checked against it.
-- The script does **not** commit, push, or tag anything; that is the caller's responsibility.
 - Expects a `.prepare-release.json` definition file in the repository root. See the [mtoken-sdk-flutter](https://github.com/wultra/mtoken-sdk-flutter/) repository for a real-world example.
 
 **Arguments**
@@ -54,7 +73,7 @@ Prepares (or verifies) an SDK repository for a new release: bumps version number
 SCRIPT_FOLDER=$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )
 
 # URL of the prepare-release script in the Wultra infrastructure repository
-URL="https://raw.githubusercontent.com/wultra/wultra-infrastructure/refs/heads/mobile/mobile/release/prepare/v1/prepare-release.js"
+URL="https://raw.githubusercontent.com/wultra/wultra-infrastructure/refs/heads/mobile/mobile/release/prepare/prepare-release.js"
 
 # Pipe the remote script into Node and forward all arguments,
 # while pinning the project root to the parent of the script folder.
