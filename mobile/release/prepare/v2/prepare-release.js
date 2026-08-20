@@ -17,7 +17,8 @@
  *   -h, --help           Show help.
  *
  * When an explicit version changes files, the script can commit all uncommitted changes,
- * only files changed during this run, or nothing. A successful commit can then be pushed.
+ * only files changed during this run, or nothing. A successful commit can then be pushed,
+ * creating the branch in origin if it does not exist.
  * Git uses the user's existing identity and credentials.
  *
  * Example `.prepare-release.json` definition:
@@ -197,7 +198,7 @@ Options:
 
 When -v is provided and files change, the script offers to commit all uncommitted
 changes, only files changed during this run, or nothing. Committed changes use
-"Prepared release <version>", after which the script offers to push.
+"Prepared release <version>", after which the script offers to push or create the branch in origin.
 
 Example usage: prepare-release -p /path/to/project -v 1.4.2
                prepare-release -p /path/to/project -v 2.0.0-SNAPSHOT
@@ -802,7 +803,11 @@ class GitRepository {
     }
 
     push() {
-        this.git(['push'], { stdio: 'inherit' })
+        const branch = this.git(['branch', '--show-current'], { encoding: 'utf8' }).trim()
+        if (branch.length === 0) {
+            this.terminal.fail('ERROR: Unable to push from a detached HEAD.')
+        }
+        this.git(['push', '--set-upstream', 'origin', branch], { stdio: 'inherit' })
     }
 
     git(argumentsList, options = {}) {
@@ -843,7 +848,7 @@ class ReleaseCommitWorkflow {
             this.terminal.fail(`ERROR: Unable to commit prepared release: ${error.message}`)
         }
 
-        if (!this.terminal.confirm('Push the changes? (y/n): ')) {
+        if (!this.terminal.confirm('Push the changes / create branch in origin if not created? (y/n): ')) {
             return
         }
 
