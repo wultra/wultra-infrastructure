@@ -75,7 +75,15 @@ jobs:
             if [ "$RELEASE_TYPE" == "release" ]; then
               echo -e '${{ secrets.gpg_key }}' > keyfile.asc
               echo -e '${{ secrets.gpg_passphrase }}' > passphrase.txt
-              mvn -B --no-transfer-progress -DperformRelease=true -Dpgp.secretkey=keyfile:keyfile.asc -Dpgp.passphrase=file:passphrase.txt deploy          
+              # TODO: Temporary workaround for Maven 3.10, see https://github.com/wultra/wultra-infrastructure/issues/107
+              # Remove the aether.* properties once central-publishing-maven-plugin no longer bundles local repository files:
+              # https://github.com/mavenplugins/central-publishing-maven-plugin/issues/78
+              # https://github.com/apache/maven/issues/13388
+              mvn -B --no-transfer-progress -DperformRelease=true -Dpgp.secretkey=keyfile:keyfile.asc -Dpgp.passphrase=file:passphrase.txt \
+                -Daether.priority.VersionsMetadataGeneratorFactory=NaN \
+                -Daether.priority.EnhancedLocalRepositoryManagerFactory=NaN \
+                -Daether.syncContext.named.factory=rwlock-local \
+                deploy
             elif [ "$RELEASE_TYPE" == "snapshot" ]; then
               mvn -B --no-transfer-progress deploy
             fi          
