@@ -78,6 +78,9 @@ function parseDestinationList(output, iphoneOnly) {
         if (iphoneOnly && !name.includes("iPhone")) {
             continue;
         }
+        if (/\bDuo\b/i.test(name)) {
+            continue;
+        }
 
         const key = `${os}\u0000${name}`;
         if (seen.has(key)) {
@@ -121,6 +124,7 @@ function resolveSimctlDestinations() {
         for (const device of devices) {
             if (!device.isAvailable) continue;
             if (!device.name.includes("iPhone")) continue;
+            if (/\bDuo\b/i.test(device.name)) continue;
 
             const key = `${os}\u0000${device.name}`;
             if (seen.has(key)) continue;
