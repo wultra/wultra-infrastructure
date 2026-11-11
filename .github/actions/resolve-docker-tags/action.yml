@@ -1,5 +1,9 @@
 name: "Resolve Docker tags"
-description: "Resolves and sets Docker image tags for ACR and distribution registries"
+description: >
+  Resolves Docker image tags for ACR and distribution registries.
+  Release builds (releases/*, release/*, tags) get an incremental suffix '<version>_<N>',
+  where N is one more than the highest suffix already published for that version in any configured registry.
+  ACR tags additionally carry the commit SHA ('<version>_<N>-<sha>').
 
 inputs:
   app_to_build:
@@ -16,62 +20,128 @@ inputs:
 outputs:
   tags:
     description: "Resolved image tags for main image"
-    value: ${{ steps.set-dynamic-tags.outputs.TAGS }}
+    value: ${{ steps.set-tags.outputs.TAGS }}
   init_tags:
     description: "Resolved image tags for init image"
-    value: ${{ steps.set-dynamic-tags.outputs.INIT_TAGS }}
+    value: ${{ steps.set-tags.outputs.INIT_TAGS }}
+  image_version:
+    description: "Resolved image version (e.g. 1.9.3_2 for release builds)"
+    value: ${{ steps.set-tags.outputs.image_version }}
 
 runs:
   using: "composite"
   steps:
-    - name: Set Timestamp for docker image for development branch
-      if: "!(startsWith(github.ref, 'refs/heads/release/') || startsWith(github.ref, 'refs/heads/releases/') || startsWith(github.ref, 'refs/tags/'))"
+    - name: Detect release build
+      id: detect-release
       shell: bash
+      env:
+        GIT_REF: ${{ github.ref }}
       run: |
-        echo "TIMESTAMP=-$(date +%Y.%m.%d)" >> $GITHUB_ENV
-        echo "TIMESTAMP_WITH_SHA=-$(date +%Y.%m.%d)-${{ github.sha }}" >> $GITHUB_ENV
-    - name: Set ${{ inputs.app_to_build }} variables
-      shell: bash
-      run: |
-        echo "----- Setting tags for nondistribution -----"
-        IMAGE_VERSION=${{ inputs.app_version }}${{ env.TIMESTAMP }}-${{ github.sha }}
-        IMAGE_NAME=${{ inputs.app_to_build }}:${IMAGE_VERSION}
-        INIT_IMAGE_NAME=${{ inputs.app_to_build }}-init:${IMAGE_VERSION}
-
-        echo "revision=${{ inputs.app_version }}" >> $GITHUB_ENV
-        echo "image_version=$IMAGE_VERSION" >> $GITHUB_ENV
-        echo "IMAGE_NAME=$IMAGE_NAME" >> $GITHUB_ENV
-        echo "INIT_IMAGE_NAME=$INIT_IMAGE_NAME" >> $GITHUB_ENV
-
-        echo "----- Setting tags for distribution -----"
-        DIST_IMAGE_VERSION=${{ inputs.app_version }}${{ env.TIMESTAMP_WITH_SHA }}
-        DIST_IMAGE_NAME=${{ inputs.app_to_build }}:${DIST_IMAGE_VERSION}
-        DIST_INIT_IMAGE_NAME=${{ inputs.app_to_build }}-init:${DIST_IMAGE_VERSION}
-
-        echo "dist_image_version=$DIST_IMAGE_VERSION" >> $GITHUB_ENV
-        echo "DIST_IMAGE_NAME=$DIST_IMAGE_NAME" >> $GITHUB_ENV
-        echo "DIST_INIT_IMAGE_NAME=$DIST_INIT_IMAGE_NAME" >> $GITHUB_ENV
-
-        if [[ "${{ inputs.push_latest }}" == "true" ]]; then
-          echo "DIST_LATEST_IMAGE_NAME=${{ inputs.app_to_build }}:latest" >> $GITHUB_ENV
-          echo "DIST_INIT_LATEST_IMAGE_NAME=${{ inputs.app_to_build }}-init:latest" >> $GITHUB_ENV
+        if [[ "$GIT_REF" == refs/heads/release/* || "$GIT_REF" == refs/heads/releases/* || "$GIT_REF" == refs/tags/* ]]; then
+          echo "is_release=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "is_release=false" >> "$GITHUB_OUTPUT"
         fi
-    - name: Set dynamic tags for image
-      id: set-dynamic-tags
+
+    - name: Determine next tag suffix for ${{ inputs.app_to_build }}
+      id: tag-increment
+      if: steps.detect-release.outputs.is_release == 'true'
       shell: bash
+      env:
+        APP: ${{ inputs.app_to_build }}
+        APP_VERSION: ${{ inputs.app_version }}
       run: |
+        set -euo pipefail
+
+        if ! command -v skopeo >/dev/null 2>&1; then
+          sudo apt-get update -qq && sudo apt-get install -y -qq skopeo >/dev/null
+        fi
+
+        version_re=$(printf '%s' "$APP_VERSION" | sed 's/[.[\*^$+?(){}|]/\\&/g')
+        max_suffix=0
+
+        # Prints the highest suffix found in a repository, 0 if none.
+        # $1 image repository, $2 username, $3 password, $4 regex capturing the suffix
+        highest_suffix() {
+          local repo="$1" user="$2" pass="$3" regex="$4" out creds=()
+          if [[ -n "$user" && -n "$pass" ]]; then
+            creds=(--creds "${user}:${pass}")
+          fi
+          if ! out=$(skopeo list-tags "${creds[@]}" "docker://${repo}" 2>&1); then
+            if grep -qiE 'name unknown|name_unknown|repository name not known|not found|404' <<<"$out"; then
+              echo "::notice::Repository ${repo} does not exist yet" >&2
+              echo 0
+              return 0
+            fi
+            if [[ ${#creds[@]} -eq 0 ]]; then
+              echo "::warning::Cannot list tags of ${repo} without credentials, ignoring: ${out}" >&2
+              echo 0
+              return 0
+            fi
+            echo "::error::Failed to list tags of ${repo}: ${out}" >&2
+            return 1
+          fi
+          jq -r '.Tags // [] | .[]' <<<"$out" | sed -nE "s/${regex}/\1/p" | sort -n | tail -1 | grep . || echo 0
+        }
+
+        if [[ -n "${ACR_REGISTRY_URL:-}" ]]; then
+          s=$(highest_suffix "${ACR_REGISTRY_URL}/${APP}" "${ACR_USERNAME:-}" "${ACR_PASSWORD:-}" "^${version_re}_([0-9]+)-.*$")
+          echo "Highest suffix in ACR: $s"
+          if (( s > max_suffix )); then max_suffix=$s; fi
+        fi
+        if [[ -n "${DISTRIBUTION_REGISTRY_URL:-}" ]]; then
+          s=$(highest_suffix "${DISTRIBUTION_REGISTRY_URL}/${APP}" "${DISTRIBUTION_USERNAME:-}" "${DISTRIBUTION_PASSWORD:-}" "^${version_re}_([0-9]+)$")
+          echo "Highest suffix in distribution registry: $s"
+          if (( s > max_suffix )); then max_suffix=$s; fi
+        fi
+
+        next=$((max_suffix + 1))
+        echo "::notice::Next tag suffix for ${APP}:${APP_VERSION} is _${next}"
+        echo "suffix=_${next}" >> "$GITHUB_OUTPUT"
+
+    - name: Set ${{ inputs.app_to_build }} tags
+      id: set-tags
+      shell: bash
+      env:
+        APP: ${{ inputs.app_to_build }}
+        APP_VERSION: ${{ inputs.app_version }}
+        IS_RELEASE: ${{ steps.detect-release.outputs.is_release }}
+        SUFFIX: ${{ steps.tag-increment.outputs.suffix }}
+        PUSH_LATEST: ${{ inputs.push_latest }}
+        SHA: ${{ github.sha }}
+      run: |
+        set -euo pipefail
+
+        if [[ "$IS_RELEASE" == "true" ]]; then
+          DIST_IMAGE_VERSION="${APP_VERSION}${SUFFIX}"
+          IMAGE_VERSION="${DIST_IMAGE_VERSION}-${SHA}"
+        else
+          TIMESTAMP="-$(date +%Y.%m.%d)"
+          IMAGE_VERSION="${APP_VERSION}${TIMESTAMP}-${SHA}"
+          DIST_IMAGE_VERSION="${APP_VERSION}${TIMESTAMP}-${SHA}"
+        fi
+        echo "image_version=${DIST_IMAGE_VERSION}" >> "$GITHUB_OUTPUT"
+
+        tags=() init_tags=()
+        if [[ -n "${ACR_REGISTRY_URL:-}" ]]; then
+          tags+=("${ACR_REGISTRY_URL}/${APP}:${IMAGE_VERSION}")
+          init_tags+=("${ACR_REGISTRY_URL}/${APP}-init:${IMAGE_VERSION}")
+        fi
+        if [[ -n "${DISTRIBUTION_REGISTRY_URL:-}" ]]; then
+          tags+=("${DISTRIBUTION_REGISTRY_URL}/${APP}:${DIST_IMAGE_VERSION}")
+          init_tags+=("${DISTRIBUTION_REGISTRY_URL}/${APP}-init:${DIST_IMAGE_VERSION}")
+          if [[ "$PUSH_LATEST" == "true" ]]; then
+            tags+=("${DISTRIBUTION_REGISTRY_URL}/${APP}:latest")
+            init_tags+=("${DISTRIBUTION_REGISTRY_URL}/${APP}-init:latest")
+          fi
+        fi
+
         {
           echo "TAGS<<EOF"
-            echo "${{ env.ACR_REGISTRY_URL != ''  && format('{0}/{1}', env.ACR_REGISTRY_URL, env.IMAGE_NAME) || '' }}"
-            echo "${{ env.DISTRIBUTION_REGISTRY_URL != '' && format('{0}/{1}', env.DISTRIBUTION_REGISTRY_URL, env.DIST_IMAGE_NAME) || '' }}"
-            echo "${{ env.DISTRIBUTION_REGISTRY_URL != '' && env.DIST_LATEST_IMAGE_NAME != '' && format('{0}/{1}', env.DISTRIBUTION_REGISTRY_URL, env.DIST_LATEST_IMAGE_NAME) || '' }}"
+          printf '%s\n' "${tags[@]}"
           echo "EOF"
-        } >> $GITHUB_OUTPUT
-        {
-         echo "INIT_TAGS<<EOF"
-            echo "${{ env.ACR_REGISTRY_URL != ''  && format('{0}/{1}', env.ACR_REGISTRY_URL, env.INIT_IMAGE_NAME) || '' }}"
-            echo "${{ env.DISTRIBUTION_REGISTRY_URL != '' && format('{0}/{1}', env.DISTRIBUTION_REGISTRY_URL, env.DIST_INIT_IMAGE_NAME) || '' }}"
-            echo "${{ env.DISTRIBUTION_REGISTRY_URL != '' && env.DIST_INIT_LATEST_IMAGE_NAME != '' && format('{0}/{1}', env.DISTRIBUTION_REGISTRY_URL, env.DIST_INIT_LATEST_IMAGE_NAME) || '' }}"
+          echo "INIT_TAGS<<EOF"
+          printf '%s\n' "${init_tags[@]}"
           echo "EOF"
-        } >> $GITHUB_OUTPUT
-
+        } >> "$GITHUB_OUTPUT"
+        echo "Resolved tags:"; printf '  %s\n' "${tags[@]}" "${init_tags[@]}"
