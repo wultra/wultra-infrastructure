@@ -1,9 +1,8 @@
 name: "Resolve Docker tags"
 description: >
   Resolves Docker image tags for ACR and distribution registries.
-  Release builds (releases/*, release/*, tags) get an incremental suffix '<version>_<N>',
-  where N is one more than the highest suffix already published for that version in any configured registry.
-  ACR tags additionally carry the commit SHA ('<version>_<N>-<sha>').
+  Release builds (releases/*, release/*, tags) get the tag '<version>_{N}' ('<version>_{N}-<sha>' in ACR).
+  The '{N}' placeholder is resolved to the next free incremental suffix by build-and-push-docker (see next-tag-suffix).
 
 inputs:
   app_to_build:
@@ -24,9 +23,6 @@ outputs:
   init_tags:
     description: "Resolved image tags for init image"
     value: ${{ steps.set-tags.outputs.INIT_TAGS }}
-  image_version:
-    description: "Resolved image version (e.g. 1.9.3_2 for release builds)"
-    value: ${{ steps.set-tags.outputs.image_version }}
 
 runs:
   using: "composite"
@@ -43,80 +39,6 @@ runs:
           echo "is_release=false" >> "$GITHUB_OUTPUT"
         fi
 
-    - name: Determine next tag suffix for ${{ inputs.app_to_build }}
-      id: tag-increment
-      if: steps.detect-release.outputs.is_release == 'true'
-      shell: bash
-      env:
-        APP: ${{ inputs.app_to_build }}
-        APP_VERSION: ${{ inputs.app_version }}
-      run: |
-        set -euo pipefail
-        shopt -s inherit_errexit
-
-        if ! command -v skopeo >/dev/null 2>&1; then
-          sudo apt-get update -qq && sudo apt-get install -y -qq skopeo >/dev/null
-        fi
-
-        version_re=$(printf '%s' "$APP_VERSION" | sed 's/[.[\*^$+?(){}|]/\\&/g')
-        max_suffix=0
-
-        # Credentials go to a temporary auth file, never to the command line.
-        REGISTRY_AUTH_FILE=$(mktemp)
-        export REGISTRY_AUTH_FILE
-        trap 'rm -f "$REGISTRY_AUTH_FILE"' EXIT
-        echo '{}' > "$REGISTRY_AUTH_FILE"
-
-        # Prints the highest suffix found in a repository, 0 if the repository does not exist or has no matching tag.
-        # Any other lookup failure is fatal, so an existing suffix is never reused.
-        # $1 image repository, $2 username, $3 password, $4 regex capturing the suffix
-        highest_suffix() {
-          local repo="$1" user="$2" pass="$3" regex="$4" out err tags max authenticated=false
-          if [[ -n "$user" && -n "$pass" ]]; then
-            if ! err=$(skopeo login --username "$user" --password-stdin "${repo%%/*}" <<<"$pass" 2>&1 >/dev/null); then
-              echo "::error::Failed to log in to ${repo%%/*}: ${err}" >&2
-              return 1
-            fi
-            authenticated=true
-          fi
-          err=$(mktemp)
-          if ! out=$(skopeo list-tags "docker://${repo}" 2>"$err"); then
-            # Docker Hub answers 'denied' for missing repositories; with valid credentials a later push would fail anyway.
-            if grep -qiE 'name_unknown|name unknown|repository name not known' "$err" \
-              || { [[ "$authenticated" == "true" ]] && grep -qiE 'requested access to the resource is denied' "$err"; }; then
-              echo "::notice::Repository ${repo} does not exist yet" >&2
-              rm -f "$err"
-              echo 0
-              return 0
-            fi
-            echo "::error::Failed to list tags of ${repo}: $(cat "$err")" >&2
-            rm -f "$err"
-            return 1
-          fi
-          rm -f "$err"
-          if ! tags=$(jq -r '.Tags // [] | .[]' <<<"$out" 2>&1); then
-            echo "::error::Failed to parse tag list of ${repo}: ${tags}" >&2
-            return 1
-          fi
-          max=$(sed -nE "s/${regex}/\1/p" <<<"$tags" | sort -n | tail -1)
-          echo "${max:-0}"
-        }
-
-        if [[ -n "${ACR_REGISTRY_URL:-}" ]]; then
-          s=$(highest_suffix "${ACR_REGISTRY_URL}/${APP}" "${ACR_USERNAME:-}" "${ACR_PASSWORD:-}" "^${version_re}_([0-9]+)-.*$")
-          echo "Highest suffix in ACR: $s"
-          if (( s > max_suffix )); then max_suffix=$s; fi
-        fi
-        if [[ -n "${DISTRIBUTION_REGISTRY_URL:-}" ]]; then
-          s=$(highest_suffix "${DISTRIBUTION_REGISTRY_URL}/${APP}" "${DISTRIBUTION_USERNAME:-}" "${DISTRIBUTION_PASSWORD:-}" "^${version_re}_([0-9]+)$")
-          echo "Highest suffix in distribution registry: $s"
-          if (( s > max_suffix )); then max_suffix=$s; fi
-        fi
-
-        next=$((max_suffix + 1))
-        echo "::notice::Next tag suffix for ${APP}:${APP_VERSION} is _${next}"
-        echo "suffix=_${next}" >> "$GITHUB_OUTPUT"
-
     - name: Set ${{ inputs.app_to_build }} tags
       id: set-tags
       shell: bash
@@ -124,21 +46,20 @@ runs:
         APP: ${{ inputs.app_to_build }}
         APP_VERSION: ${{ inputs.app_version }}
         IS_RELEASE: ${{ steps.detect-release.outputs.is_release }}
-        SUFFIX: ${{ steps.tag-increment.outputs.suffix }}
         PUSH_LATEST: ${{ inputs.push_latest }}
         SHA: ${{ github.sha }}
       run: |
         set -euo pipefail
 
         if [[ "$IS_RELEASE" == "true" ]]; then
-          DIST_IMAGE_VERSION="${APP_VERSION}${SUFFIX}"
+          # '{N}' is replaced with the next free suffix by build-and-push-docker right before pushing.
+          DIST_IMAGE_VERSION="${APP_VERSION}_{N}"
           IMAGE_VERSION="${DIST_IMAGE_VERSION}-${SHA}"
         else
           TIMESTAMP="-$(date +%Y.%m.%d)"
           IMAGE_VERSION="${APP_VERSION}${TIMESTAMP}-${SHA}"
           DIST_IMAGE_VERSION="${APP_VERSION}${TIMESTAMP}-${SHA}"
         fi
-        echo "image_version=${DIST_IMAGE_VERSION}" >> "$GITHUB_OUTPUT"
 
         tags=() init_tags=()
         if [[ -n "${ACR_REGISTRY_URL:-}" ]]; then
