@@ -1,8 +1,9 @@
 name: "Resolve Docker tags"
 description: >
   Resolves Docker image tags for ACR and distribution registries.
-  Release builds (releases/*, release/*, tags) get the tag '<version>_{N}' ('<version>_{N}-<sha>' in ACR).
-  The '{N}' placeholder is resolved to the next free incremental suffix by build-and-push-docker (see next-tag-suffix).
+  Release builds (releases/*, release/*, tags) get an incremental suffix '<version>_<N>',
+  where N is one more than the highest suffix already published for that version in any configured registry.
+  ACR tags additionally carry the commit SHA ('<version>_<N>-<sha>').
 
 inputs:
   app_to_build:
@@ -23,6 +24,9 @@ outputs:
   init_tags:
     description: "Resolved image tags for init image"
     value: ${{ steps.set-tags.outputs.INIT_TAGS }}
+  image_version:
+    description: "Resolved image version (e.g. 1.9.3_2 for release builds)"
+    value: ${{ steps.set-tags.outputs.image_version }}
 
 runs:
   using: "composite"
@@ -39,6 +43,93 @@ runs:
           echo "is_release=false" >> "$GITHUB_OUTPUT"
         fi
 
+    - name: Determine next tag suffix for ${{ inputs.app_to_build }}
+      id: tag-increment
+      if: steps.detect-release.outputs.is_release == 'true'
+      shell: bash
+      env:
+        APP: ${{ inputs.app_to_build }}
+        APP_VERSION: ${{ inputs.app_version }}
+      run: |
+        set -euo pipefail
+        shopt -s inherit_errexit
+
+        if ! command -v skopeo >/dev/null 2>&1; then
+          echo "::error::skopeo is required but not installed on this runner" >&2
+          exit 1
+        fi
+
+        version_re=$(printf '%s' "$APP_VERSION" | sed 's/[][\.*^$+?(){}|/]/\\&/g')
+        max_suffix=0
+
+        # Credentials go to a temporary auth file, never to the command line.
+        REGISTRY_AUTH_FILE=$(mktemp)
+        err=$(mktemp)
+        export REGISTRY_AUTH_FILE
+        trap 'rm -f "$REGISTRY_AUTH_FILE" "$err"' EXIT
+        echo '{}' > "$REGISTRY_AUTH_FILE"
+
+        # Logs in to a registry if credentials are given, prints whether the lookup is authenticated.
+        # $1 registry, $2 username, $3 password
+        login() {
+          if [[ -z "$2" || -z "$3" ]]; then
+            echo false
+            return 0
+          fi
+          if ! skopeo login --username "$2" --password-stdin "$1" <<<"$3" >/dev/null 2>"$err"; then
+            echo "::error::Failed to log in to $1: $(<"$err")" >&2
+            return 1
+          fi
+          echo true
+        }
+
+        # Prints the highest suffix found in a repository, 0 if the repository does not exist or has no matching tag.
+        # Any other lookup failure is fatal, so an existing suffix is never reused.
+        # $1 image repository, $2 whether the lookup is authenticated, $3 regex capturing the suffix
+        highest_suffix() {
+          local repo="$1" authenticated="$2" regex="$3" out repo_tags max
+          if ! out=$(skopeo list-tags "docker://${repo}" 2>"$err"); then
+            # Docker Hub answers 'denied' for missing repositories; with valid credentials a later push would fail anyway.
+            if grep -qiE 'name_unknown|name unknown|repository name not known' "$err" \
+              || { [[ "$authenticated" == "true" ]] && grep -qiE 'requested access to the resource is denied' "$err"; }; then
+              echo "::notice::Repository ${repo} does not exist yet" >&2
+              echo 0
+              return 0
+            fi
+            echo "::error::Failed to list tags of ${repo}: $(<"$err")" >&2
+            return 1
+          fi
+          if ! repo_tags=$(jq -r '.Tags // [] | .[]' <<<"$out" 2>&1); then
+            echo "::error::Failed to parse tag list of ${repo}: ${repo_tags}" >&2
+            return 1
+          fi
+          max=$(sed -nE "s/${regex}/\1/p" <<<"$repo_tags" | sort -n | tail -1)
+          echo "$((10#${max:-0}))"
+        }
+
+        # The main and init images share the suffix, so both repositories are checked.
+        # $1 registry, $2 username, $3 password, $4 regex capturing the suffix
+        check_registry() {
+          local registry="$1" authenticated repo s
+          authenticated=$(login "${registry%%/*}" "$2" "$3")
+          for repo in "${registry}/${APP}" "${registry}/${APP}-init"; do
+            s=$(highest_suffix "$repo" "$authenticated" "$4")
+            echo "Highest suffix of ${repo}:${APP_VERSION}_* is ${s}"
+            if (( s > max_suffix )); then max_suffix=$s; fi
+          done
+        }
+
+        if [[ -n "${ACR_REGISTRY_URL:-}" ]]; then
+          check_registry "${ACR_REGISTRY_URL}" "${ACR_USERNAME:-}" "${ACR_PASSWORD:-}" "^${version_re}_([0-9]+)-.*$"
+        fi
+        if [[ -n "${DISTRIBUTION_REGISTRY_URL:-}" ]]; then
+          check_registry "${DISTRIBUTION_REGISTRY_URL}" "${DISTRIBUTION_USERNAME:-}" "${DISTRIBUTION_PASSWORD:-}" "^${version_re}_([0-9]+)$"
+        fi
+
+        next=$((max_suffix + 1))
+        echo "::notice::Next tag suffix for ${APP}:${APP_VERSION} is _${next}"
+        echo "suffix=_${next}" >> "$GITHUB_OUTPUT"
+
     - name: Set ${{ inputs.app_to_build }} tags
       id: set-tags
       shell: bash
@@ -46,20 +137,21 @@ runs:
         APP: ${{ inputs.app_to_build }}
         APP_VERSION: ${{ inputs.app_version }}
         IS_RELEASE: ${{ steps.detect-release.outputs.is_release }}
+        SUFFIX: ${{ steps.tag-increment.outputs.suffix }}
         PUSH_LATEST: ${{ inputs.push_latest }}
         SHA: ${{ github.sha }}
       run: |
         set -euo pipefail
 
         if [[ "$IS_RELEASE" == "true" ]]; then
-          # '{N}' is replaced with the next free suffix by build-and-push-docker right before pushing.
-          DIST_IMAGE_VERSION="${APP_VERSION}_{N}"
+          DIST_IMAGE_VERSION="${APP_VERSION}${SUFFIX}"
           IMAGE_VERSION="${DIST_IMAGE_VERSION}-${SHA}"
         else
           TIMESTAMP="-$(date +%Y.%m.%d)"
           IMAGE_VERSION="${APP_VERSION}${TIMESTAMP}-${SHA}"
           DIST_IMAGE_VERSION="${APP_VERSION}${TIMESTAMP}-${SHA}"
         fi
+        echo "image_version=${DIST_IMAGE_VERSION}" >> "$GITHUB_OUTPUT"
 
         tags=() init_tags=()
         if [[ -n "${ACR_REGISTRY_URL:-}" ]]; then

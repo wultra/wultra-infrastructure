@@ -19,11 +19,6 @@ inputs:
     required: false
     default: 'true'
 
-outputs:
-  tags:
-    description: "Image tags as built (and pushed), with the '{N}' placeholder resolved"
-    value: ${{ steps.next-suffix.outputs.tags || steps.prepare-tags.outputs.tags }}
-
 runs:
   using: "composite"
   steps:
@@ -55,53 +50,41 @@ runs:
         registry: ${{ steps.extract_registry_host.outputs.registry_host }}
         username: ${{ env.DISTRIBUTION_USERNAME }}
         password: ${{ env.DISTRIBUTION_PASSWORD }}
-    - name: Prepare tags
-      id: prepare-tags
+    - name: Check that incremental tags are not published yet
+      if: ${{ inputs.should_push == 'true' }}
       shell: bash
       env:
         TAGS: ${{ inputs.tags }}
       run: |
         set -euo pipefail
-        if [[ "$TAGS" == *'{N}'* ]]; then
-          echo "placeholder=true" >> "$GITHUB_OUTPUT"
-        else
-          echo "placeholder=false" >> "$GITHUB_OUTPUT"
-        fi
-        # Tags with the '{N}' suffix placeholder are only resolved right before pushing, build-only uses 0.
-        {
-          echo "tags<<EOF"
-          echo "${TAGS//\{N\}/0}"
-          echo "EOF"
-        } >> "$GITHUB_OUTPUT"
-    - name: Build container image
+        # Incremental tags ('<version>_<N>', '<version>_<N>-<sha>') are never overwritten.
+        # Other tags ('latest', development '<version>-<date>-<sha>') may be pushed again.
+        while IFS= read -r tag; do
+          tag="${tag#"${tag%%[![:space:]]*}"}"
+          tag="${tag%"${tag##*[![:space:]]}"}"
+          [[ "${tag##*:}" =~ _[0-9]+(-[0-9a-f]{40})?$ ]] || continue
+          if out=$(docker buildx imagetools inspect "$tag" --format '{{json .Manifest.Digest}}' 2>&1); then
+            echo "::error::Tag ${tag} already exists (${out}), refusing to overwrite it" >&2
+            exit 1
+          fi
+          if [[ "$out" != *": not found"* ]]; then
+            echo "::error::Failed to check whether ${tag} exists: ${out}" >&2
+            exit 1
+          fi
+          echo "Tag ${tag} is not published yet"
+        done <<<"$TAGS"
+    - name: Build and push container image to registry
       uses: docker/build-push-action@v7
       with:
-        push: ${{ inputs.should_push == 'true' && steps.prepare-tags.outputs.placeholder != 'true' }}
+        push: ${{ inputs.should_push == 'true' }}
         platforms: ${{ inputs.platforms }}
-        tags: ${{ steps.prepare-tags.outputs.tags }}
-        file: '${{ inputs.dockerfile_folder_path }}/Dockerfile'
-        context: .
-    - name: Resolve next tag suffix
-      if: ${{ inputs.should_push == 'true' && steps.prepare-tags.outputs.placeholder == 'true' }}
-      id: next-suffix
-      uses: wultra/wultra-infrastructure/.github/actions/next-tag-suffix@develop
-      with:
         tags: ${{ inputs.tags }}
-    - name: Push container image
-      if: ${{ inputs.should_push == 'true' && steps.prepare-tags.outputs.placeholder == 'true' }}
-      uses: docker/build-push-action@v7
-      with:
-        push: true
-        platforms: ${{ inputs.platforms }}
-        tags: ${{ steps.next-suffix.outputs.tags }}
         file: '${{ inputs.dockerfile_folder_path }}/Dockerfile'
         context: .
     - name: Resolve image digests
       if: ${{ inputs.should_push == 'true' }}
       id: digests
       shell: bash
-      env:
-        TAGS: ${{ steps.next-suffix.outputs.tags || steps.prepare-tags.outputs.tags }}
       run: |
         set -euo pipefail
 
@@ -118,7 +101,7 @@ runs:
           echo "$output"
         }
 
-        tags_digests=$(resolve_tags "$TAGS")
+        tags_digests=$(resolve_tags "${{ inputs.tags }}")
 
         echo "tags_digests=${tags_digests}" >> "$GITHUB_OUTPUT"
     - name: Show results from outputs
