@@ -11,13 +11,13 @@
  *   -v <version>         Version to prepare, for example 1.4.2, 2.0.0-SNAPSHOT, or 1.2.3-beta.1.
  *                        Without this option, the current version is read and only verified.
  *   --prepare-dev        Verify the current release, then prepare files for development.
- *   --verify             Verify without preparing files.
+ *   --verify             Verify without preparing files or offering to commit.
  *   --ignore-git-clean   Skip the initial and final Git cleanliness checks.
  *   --enforce-git-clean  Fail instead of asking when the repository is initially dirty.
  *   -h, --help           Show help.
  *
- * When an explicit version changes files, the script can commit all uncommitted changes,
- * only files changed during this run, or nothing. A successful commit can then be pushed,
+ * If preparing a release with -v changes files, the script can commit all uncommitted
+ * changes, only files changed during this run, or nothing. A successful commit can then be pushed,
  * creating the branch in origin if it does not exist.
  * Git uses the user's existing identity and credentials.
  *
@@ -192,12 +192,12 @@ Options:
   -h, --help                  Show this help message.
   --ignore-git-clean          Ignore the Git clean state check.
   --enforce-git-clean         Exit when the Git repository is not clean.
-  --verify                    Run in verify mode.
+  --verify                    Verify without preparing files or offering to commit.
   --prepare-dev               Verify the current release, then prepare development files
                               using devVersion from .prepare-release.json.
 
-When -v is provided and files change, the script offers to commit all uncommitted
-changes, only files changed during this run, or nothing. Committed changes use
+If preparing a release with -v changes files, the script offers to commit all
+uncommitted changes, only files changed during this run, or nothing. Committed changes use
 "Prepared release <version>", after which the script offers to push or create the branch in origin.
 
 Example usage: prepare-release -p /path/to/project -v 1.4.2
@@ -884,7 +884,8 @@ class PrepareReleaseApplication {
         const projectRoot = path.resolve(this.options.projectRoot)
         const gitRepository = new GitRepository(projectRoot, this.terminal)
         const gitWasCleanAtStart = this.checkInitialGitState(gitRepository)
-        const initialChanges = this.options.version == null ? null : gitRepository.captureChanges()
+        const verifyMode = this.options.verifyMode || this.options.version == null
+        const initialChanges = verifyMode ? null : gitRepository.captureChanges()
 
         this.terminal.header('Preparing release script started')
         this.terminal.info(` - Using project path: ${projectRoot}`)
@@ -895,7 +896,6 @@ class PrepareReleaseApplication {
             return
         }
 
-        const verifyMode = this.options.verifyMode || this.options.version == null
         const versionValue = this.options.version == null
             ? new VersionResolver(projectRoot, this.terminal).resolve(definition)
             : this.options.version
