@@ -43,6 +43,29 @@ runs:
           echo "is_release=false" >> "$GITHUB_OUTPUT"
         fi
 
+    # skopeo reads the credentials stored by docker login.
+    - name: Log in to ACR
+      if: steps.detect-release.outputs.is_release == 'true' && env.ACR_REGISTRY_URL != ''
+      uses: docker/login-action@v4
+      with:
+        registry: ${{ env.ACR_REGISTRY_URL }}
+        username: ${{ env.ACR_USERNAME }}
+        password: ${{ env.ACR_PASSWORD }}
+    - name: Extract registry host
+      if: steps.detect-release.outputs.is_release == 'true' && env.DISTRIBUTION_REGISTRY_URL != ''
+      id: extract_registry_host
+      shell: bash
+      env:
+        REGISTRY_URL: ${{ env.DISTRIBUTION_REGISTRY_URL }}
+      run: echo "registry_host=${REGISTRY_URL%%/*}" >> "$GITHUB_OUTPUT"
+    - name: Log in to Distribution registry
+      if: steps.detect-release.outputs.is_release == 'true' && env.DISTRIBUTION_REGISTRY_URL != ''
+      uses: docker/login-action@v4
+      with:
+        registry: ${{ steps.extract_registry_host.outputs.registry_host }}
+        username: ${{ env.DISTRIBUTION_USERNAME }}
+        password: ${{ env.DISTRIBUTION_PASSWORD }}
+
     - name: Determine next tag suffix for ${{ inputs.app_to_build }}
       id: tag-increment
       if: steps.detect-release.outputs.is_release == 'true'
@@ -54,76 +77,45 @@ runs:
         set -euo pipefail
         shopt -s inherit_errexit
 
-        if ! command -v skopeo >/dev/null 2>&1; then
-          echo "::error::skopeo is required but not installed on this runner" >&2
-          exit 1
-        fi
-
         version_re=$(printf '%s' "$APP_VERSION" | sed 's/[][\.*^$+?(){}|/]/\\&/g')
         max_suffix=0
-
-        # Credentials go to a temporary auth file, never to the command line.
-        REGISTRY_AUTH_FILE=$(mktemp)
         err=$(mktemp)
-        export REGISTRY_AUTH_FILE
-        trap 'rm -f "$REGISTRY_AUTH_FILE" "$err"' EXIT
-        echo '{}' > "$REGISTRY_AUTH_FILE"
+        trap 'rm -f "$err"' EXIT
 
-        # Logs in to a registry if credentials are given, prints whether the lookup is authenticated.
-        # $1 registry, $2 username, $3 password
-        login() {
-          if [[ -z "$2" || -z "$3" ]]; then
-            echo false
-            return 0
-          fi
-          if ! skopeo login --username "$2" --password-stdin "$1" <<<"$3" >/dev/null 2>"$err"; then
-            echo "::error::Failed to log in to $1: $(<"$err")" >&2
-            return 1
-          fi
-          echo true
-        }
-
-        # Prints the highest suffix found in a repository, 0 if the repository does not exist or has no matching tag.
+        # Prints the highest suffix in a repository, 0 if the repository does not exist.
         # Any other lookup failure is fatal, so an existing suffix is never reused.
-        # $1 image repository, $2 whether the lookup is authenticated, $3 regex capturing the suffix
+        # $1 image repository, $2 regex capturing the suffix
         highest_suffix() {
-          local repo="$1" authenticated="$2" regex="$3" out repo_tags max
-          if ! out=$(skopeo list-tags "docker://${repo}" 2>"$err"); then
-            # Docker Hub answers 'denied' for missing repositories; with valid credentials a later push would fail anyway.
-            if grep -qiE 'name_unknown|name unknown|repository name not known' "$err" \
-              || { [[ "$authenticated" == "true" ]] && grep -qiE 'requested access to the resource is denied' "$err"; }; then
-              echo "::notice::Repository ${repo} does not exist yet" >&2
+          local out max
+          if ! out=$(skopeo list-tags "docker://$1" 2>"$err"); then
+            # Docker Hub answers 'denied' instead of 'not found' for missing repositories of a logged-in user.
+            if grep -qiE 'name_unknown|name unknown|requested access to the resource is denied' "$err"; then
+              echo "::notice::Repository $1 does not exist yet" >&2
               echo 0
               return 0
             fi
-            echo "::error::Failed to list tags of ${repo}: $(<"$err")" >&2
+            echo "::error::Failed to list tags of $1: $(<"$err")" >&2
             return 1
           fi
-          if ! repo_tags=$(jq -r '.Tags // [] | .[]' <<<"$out" 2>&1); then
-            echo "::error::Failed to parse tag list of ${repo}: ${repo_tags}" >&2
-            return 1
-          fi
-          max=$(sed -nE "s/${regex}/\1/p" <<<"$repo_tags" | sort -n | tail -1)
+          max=$(jq -r '.Tags // [] | .[]' <<<"$out" | sed -nE "s/$2/\1/p" | sort -n | tail -1)
           echo "$((10#${max:-0}))"
         }
 
-        # The main and init images share the suffix, so both repositories are checked.
-        # $1 registry, $2 username, $3 password, $4 regex capturing the suffix
+        # The main and init images share the suffix. $1 registry, $2 regex capturing the suffix
         check_registry() {
-          local registry="$1" authenticated repo s
-          authenticated=$(login "${registry%%/*}" "$2" "$3")
-          for repo in "${registry}/${APP}" "${registry}/${APP}-init"; do
-            s=$(highest_suffix "$repo" "$authenticated" "$4")
+          local repo s
+          for repo in "$1/${APP}" "$1/${APP}-init"; do
+            s=$(highest_suffix "$repo" "$2")
             echo "Highest suffix of ${repo}:${APP_VERSION}_* is ${s}"
             if (( s > max_suffix )); then max_suffix=$s; fi
           done
         }
 
         if [[ -n "${ACR_REGISTRY_URL:-}" ]]; then
-          check_registry "${ACR_REGISTRY_URL}" "${ACR_USERNAME:-}" "${ACR_PASSWORD:-}" "^${version_re}_([0-9]+)-.*$"
+          check_registry "$ACR_REGISTRY_URL" "^${version_re}_([0-9]+)-.*$"
         fi
         if [[ -n "${DISTRIBUTION_REGISTRY_URL:-}" ]]; then
-          check_registry "${DISTRIBUTION_REGISTRY_URL}" "${DISTRIBUTION_USERNAME:-}" "${DISTRIBUTION_PASSWORD:-}" "^${version_re}_([0-9]+)$"
+          check_registry "$DISTRIBUTION_REGISTRY_URL" "^${version_re}_([0-9]+)$"
         fi
 
         next=$((max_suffix + 1))
