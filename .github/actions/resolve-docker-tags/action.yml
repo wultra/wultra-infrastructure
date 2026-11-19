@@ -52,6 +52,7 @@ runs:
         APP_VERSION: ${{ inputs.app_version }}
       run: |
         set -euo pipefail
+        shopt -s inherit_errexit
 
         if ! command -v skopeo >/dev/null 2>&1; then
           sudo apt-get update -qq && sudo apt-get install -y -qq skopeo >/dev/null
@@ -60,28 +61,45 @@ runs:
         version_re=$(printf '%s' "$APP_VERSION" | sed 's/[.[\*^$+?(){}|]/\\&/g')
         max_suffix=0
 
-        # Prints the highest suffix found in a repository, 0 if none.
+        # Credentials go to a temporary auth file, never to the command line.
+        REGISTRY_AUTH_FILE=$(mktemp)
+        export REGISTRY_AUTH_FILE
+        trap 'rm -f "$REGISTRY_AUTH_FILE"' EXIT
+        echo '{}' > "$REGISTRY_AUTH_FILE"
+
+        # Prints the highest suffix found in a repository, 0 if the repository does not exist or has no matching tag.
+        # Any other lookup failure is fatal, so an existing suffix is never reused.
         # $1 image repository, $2 username, $3 password, $4 regex capturing the suffix
         highest_suffix() {
-          local repo="$1" user="$2" pass="$3" regex="$4" out creds=()
+          local repo="$1" user="$2" pass="$3" regex="$4" out err tags max authenticated=false
           if [[ -n "$user" && -n "$pass" ]]; then
-            creds=(--creds "${user}:${pass}")
+            if ! err=$(skopeo login --username "$user" --password-stdin "${repo%%/*}" <<<"$pass" 2>&1 >/dev/null); then
+              echo "::error::Failed to log in to ${repo%%/*}: ${err}" >&2
+              return 1
+            fi
+            authenticated=true
           fi
-          if ! out=$(skopeo list-tags "${creds[@]}" "docker://${repo}" 2>&1); then
-            if grep -qiE 'name unknown|name_unknown|repository name not known|not found|404' <<<"$out"; then
+          err=$(mktemp)
+          if ! out=$(skopeo list-tags "docker://${repo}" 2>"$err"); then
+            # Docker Hub answers 'denied' for missing repositories; with valid credentials a later push would fail anyway.
+            if grep -qiE 'name_unknown|name unknown|repository name not known' "$err" \
+              || { [[ "$authenticated" == "true" ]] && grep -qiE 'requested access to the resource is denied' "$err"; }; then
               echo "::notice::Repository ${repo} does not exist yet" >&2
+              rm -f "$err"
               echo 0
               return 0
             fi
-            if [[ ${#creds[@]} -eq 0 ]]; then
-              echo "::warning::Cannot list tags of ${repo} without credentials, ignoring: ${out}" >&2
-              echo 0
-              return 0
-            fi
-            echo "::error::Failed to list tags of ${repo}: ${out}" >&2
+            echo "::error::Failed to list tags of ${repo}: $(cat "$err")" >&2
+            rm -f "$err"
             return 1
           fi
-          jq -r '.Tags // [] | .[]' <<<"$out" | sed -nE "s/${regex}/\1/p" | sort -n | tail -1 | grep . || echo 0
+          rm -f "$err"
+          if ! tags=$(jq -r '.Tags // [] | .[]' <<<"$out" 2>&1); then
+            echo "::error::Failed to parse tag list of ${repo}: ${tags}" >&2
+            return 1
+          fi
+          max=$(sed -nE "s/${regex}/\1/p" <<<"$tags" | sort -n | tail -1)
+          echo "${max:-0}"
         }
 
         if [[ -n "${ACR_REGISTRY_URL:-}" ]]; then
