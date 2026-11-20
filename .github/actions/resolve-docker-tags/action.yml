@@ -82,14 +82,21 @@ runs:
         err=$(mktemp)
         trap 'rm -f "$err"' EXIT
 
+        # Docker Hub answers 'denied' instead of 'not found' for a missing repository, so its absence is confirmed
+        # by the Docker Hub API. $1 image repository
+        docker_hub_missing() {
+          local path="${1#docker.io/}"
+          [[ "$1" == docker.io/*/* ]] && grep -qi 'requested access to the resource is denied' "$err" \
+            && [[ $(curl -s -o /dev/null -w '%{http_code}' "https://hub.docker.com/v2/namespaces/${path%%/*}/repositories/${path#*/}") == 404 ]]
+        }
+
         # Prints the highest suffix in a repository, 0 if the repository does not exist.
         # Any other lookup failure is fatal, so an existing suffix is never reused.
         # $1 image repository, $2 regex capturing the suffix
         highest_suffix() {
           local out max
           if ! out=$(skopeo list-tags "docker://$1" 2>"$err"); then
-            # Docker Hub answers 'denied' instead of 'not found' for missing repositories of a logged-in user.
-            if grep -qiE 'name_unknown|name unknown|requested access to the resource is denied' "$err"; then
+            if grep -qiE 'name_unknown|name unknown' "$err" || docker_hub_missing "$1"; then
               echo "::notice::Repository $1 does not exist yet" >&2
               echo 0
               return 0
