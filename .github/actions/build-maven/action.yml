@@ -64,10 +64,10 @@ runs:
       run: |
         if [ "${{ inputs.module_to_build }}" = "." ]; then
           echo "Preparing libs for whole project in $(pwd)"
-          mvn -B -U dependency:copy-dependencies -DoutputDirectory=libs --no-transfer-progress
+          mvn -B -U -DuseInternalRepo=true dependency:copy-dependencies -DoutputDirectory=libs --no-transfer-progress
         else
           echo "Preparing libs for module '${{ inputs.module_to_build }}' in $(pwd)"
-          mvn -B -U -pl ${{ inputs.module_to_build }} dependency:copy-dependencies -DoutputDirectory=libs --no-transfer-progress
+          mvn -B -U -DuseInternalRepo=true -pl ${{ inputs.module_to_build }} dependency:copy-dependencies -DoutputDirectory=libs --no-transfer-progress
         fi
 
     - name: Prepare SBOM files
